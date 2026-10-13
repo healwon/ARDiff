@@ -55,6 +55,7 @@ setup_jdk() {
   else
     log "JDK present: $jdk"
   fi
+  mkdir -p "$(dirname "$ENV_FILE")"
   cat > "$ENV_FILE" <<EOF
 # source $ENV_FILE
 export JAVA_HOME=$jdk
