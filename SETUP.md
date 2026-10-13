@@ -28,7 +28,7 @@ repo의 **Settings → Pages → Build and deployment → Source**를 **GitHub A
 
 ## 3. 실행
 
-- **자동**: `examples/`, `refinement/`, workflow 파일이 바뀐 커밋을 main(또는 master)에 push하면 실행
+- **자동**: `examples/`, `refinement/`, workflow 파일이 바뀐 커밋을 main, master, docs 브랜치에 push하면 실행. docs에서 배포하려면 **Settings → Environments → github-pages → Deployment branches and tags**에 `docs`를 추가해야 함
 - **수동**: **Actions → ARDiff refinement viewer → Run workflow**
   - `benchmarks`: 공백으로 구분한 예제 목록 (예: `Ran/ran/NEq Bess/bessk/NEq examples`). 비우면 기본 5개 + `examples/` 전체
   - `tool_args`: ARDiff 옵션 (기본 `--tool A --H H123`)
