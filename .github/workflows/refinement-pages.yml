@@ -1,0 +1,95 @@
+# Runs ARDiff (debug + per-iteration snapshots) on GitHub Actions and publishes the refinement viewer to GitHub Pages.
+name: ARDiff refinement viewer
+
+on:
+  workflow_dispatch:
+    inputs:
+      benchmarks:
+        description: "Benchmarks, space separated (e.g. Ran/ran/NEq examples). Empty = defaults + examples/"
+        required: false
+        default: ""
+      tool_args:
+        description: "ARDiff options"
+        required: false
+        default: "--tool A --H H123"
+  push:
+    branches: [main, master]
+    paths:
+      - "examples/**"
+      - "refinement/**"
+      - ".github/workflows/refinement-pages.yml"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      JOBS: "2"
+      HEAP: "5G"
+      TIMEOUT: "600"
+      TOOL_ARGS: ${{ inputs.tool_args || '--tool A --H H123' }}
+      BENCHMARKS: ${{ inputs.benchmarks }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Zulu JDK 8 with JavaFX
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "8"
+          java-package: jdk+fx
+
+      - name: Use all runner cores
+        run: echo "CORES=0-$(( $(nproc) - 1 ))" >> "$GITHUB_ENV"
+
+      - name: Setup ARDiff
+        run: |
+          chmod +x Implementation/z3 refinement/*.sh
+          ARDIFF_JAVA_HOME="$JAVA_HOME" refinement/ardiff-workflow.sh setup
+
+      - name: Run ARDiff
+        # BENCHMARKS is word-split on purpose (space separated list)
+        run: refinement/ardiff-workflow.sh run $BENCHMARKS | tee run-summary.txt
+
+      - name: Render viewer
+        run: refinement/ardiff-workflow.sh render $BENCHMARKS
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site/runs
+          cp refinement/refinement-viewer.html _site/index.html
+          cp run-summary.txt _site/runs/summary.txt
+          cd refinement/bench
+          find . -name debug.log | while read -r f; do
+            d=$(dirname "$f"); [ -d "$d/iterations" ] || continue
+            mkdir -p "../../_site/runs/$d" && cp "$f" "../../_site/runs/$d/"
+          done
+          {
+            echo "### ARDiff results"
+            echo '```'
+            cat ../../run-summary.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

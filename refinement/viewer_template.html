@@ -1,0 +1,259 @@
+<title>ARDiff Refinement Explorer</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: control bar (benchmark + iteration scrubber) on top; below, code pane (left) and decision pane (right), stacking on phones */
+:root {
+  --bg: #f5f6f8; --panel: #ffffff; --fg: #1a2130; --muted: #5e6879; --rule: #d8dde6; --hover: #eef1f6;
+  --abs: #e6e9f0; --abs-fg: #6a7385; --conc: #2f6fb0; --conc-soft: #dce8f6; --chg: #c9790f; --chg-soft: #fbecd3;
+  --pick: #7a3fb3; --pick-soft: #efe3fa; --ok: #23824f; --bad: #bf3a2b; --warn: #b07a12;
+  --sans: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11151c; --panel: #192029; --fg: #e2e7ef; --muted: #98a2b3; --rule: #2b3340; --hover: #222a35;
+  --abs: #242c38; --abs-fg: #8d97a8; --conc: #66a3e6; --conc-soft: #1f3550; --chg: #e9a23b; --chg-soft: #3d2f17;
+  --pick: #b88ae6; --pick-soft: #33264a; --ok: #4fbf82; --bad: #ec6e5f; --warn: #e0b04a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #11151c; --panel: #192029; --fg: #e2e7ef; --muted: #98a2b3; --rule: #2b3340; --hover: #222a35;
+  --abs: #242c38; --abs-fg: #8d97a8; --conc: #66a3e6; --conc-soft: #1f3550; --chg: #e9a23b; --chg-soft: #3d2f17;
+  --pick: #b88ae6; --pick-soft: #33264a; --ok: #4fbf82; --bad: #ec6e5f; --warn: #e0b04a; color-scheme: dark }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; line-height: 1.55; }
+.wrap { max-width: 1280px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 48px; display: grid; gap: 16px; }
+h1 { font-size: 20px; margin: 0; }
+h3 { font-size: 13px; margin: 0 0 6px; color: var(--muted); font-weight: 500; letter-spacing: .03em; }
+code, .mono { font-family: var(--mono); font-size: 12.5px; }
+.muted { color: var(--muted); }
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; min-width: 0; }
+button, select { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+button:hover { background: var(--hover); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--conc); outline-offset: 2px; }
+button[aria-pressed="true"] { border-color: var(--conc); color: var(--conc); font-weight: 600; }
+/* top bar */
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.top .grow { flex: 1 1 auto; }
+.verdict { font-family: var(--mono); font-weight: 600; font-size: 13px; padding: 2px 10px; border-radius: 99px; border: 1.5px solid currentColor; }
+.v-EQUIVALENT { color: var(--ok); } .v-NOT { color: var(--bad); } .v-UNKNOWN { color: var(--warn); }
+/* scrubber */
+.scrub { padding: 12px 14px; display: grid; gap: 10px; }
+.ctrl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ctrl .now { font-family: var(--mono); font-size: 13px; margin-left: 4px; }
+.steps { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 2px; }
+.step { flex: 0 0 auto; min-width: 46px; padding: 4px 6px; border-radius: 6px; text-align: center; font-family: var(--mono); font-size: 12px; border: 1px solid var(--rule); background: var(--panel); }
+.step .dot { display: block; height: 4px; border-radius: 2px; margin-top: 4px; }
+.step[aria-current="true"] { border-color: var(--fg); box-shadow: inset 0 0 0 1px var(--fg); }
+.s-UNKNOWN { background: var(--abs-fg); } .s-SATISFIABLE { background: var(--warn); } .s-UNSATISFIABLE { background: var(--ok); } .s-final-neq { background: var(--bad); }
+/* main */
+.main { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--rule); }
+.codebox { overflow: auto; max-height: 72vh; }
+table.code { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 12.5px; }
+.code td { padding: 0 8px; white-space: pre; vertical-align: top; }
+.code td.n { color: var(--muted); text-align: right; user-select: none; width: 1%; padding-left: 10px; }
+.code td.tag { width: 1%; padding: 0 4px; font-size: 10.5px; color: var(--muted); user-select: none; }
+.code tr.abs td.t { color: var(--abs-fg); background: var(--abs); }
+.code tr.conc td.t { background: var(--conc-soft); }
+.code tr.chg td.t { background: var(--chg-soft); }
+.code tr.pick td.t { background: var(--pick-soft); box-shadow: inset 3px 0 0 var(--pick); }
+.code tr.fresh td.t { box-shadow: inset 3px 0 0 var(--conc); }
+.code tr.dl td.t { background: var(--conc-soft); }
+.code .uf { color: var(--pick); font-weight: 600; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 8px 12px; border-top: 1px solid var(--rule); font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 5px; }
+pre.raw { margin: 0; padding: 10px 12px; font-family: var(--mono); font-size: 12px; white-space: pre; }
+/* decision pane */
+.dec { padding: 14px; display: grid; gap: 16px; }
+.flow { display: grid; gap: 6px; }
+.fstep { display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--rule); }
+.fstep.off { opacity: .45; }
+.fstep b { font-weight: 600; }
+.pill { font-family: var(--mono); font-size: 11.5px; padding: 0 7px; border-radius: 99px; border: 1px solid currentColor; white-space: nowrap; }
+.p-UNKNOWN, .p-unknown { color: var(--muted); } .p-SATISFIABLE, .p-sat { color: var(--warn); } .p-UNSATISFIABLE, .p-unsat { color: var(--ok); }
+.uflist { display: flex; flex-wrap: wrap; gap: 4px; }
+.ufc { font-family: var(--mono); font-size: 11.5px; padding: 1px 6px; border-radius: 4px; background: var(--abs); color: var(--abs-fg); border: 1px solid transparent; }
+.ufc.cand { background: var(--panel); color: var(--fg); border-color: var(--rule); }
+.ufc.h1 { border-color: var(--warn); }
+.ufc.chosen { background: var(--pick-soft); color: var(--pick); border-color: var(--pick); font-weight: 600; }
+.rank { display: grid; gap: 3px; }
+.rrow { display: grid; grid-template-columns: 34px 1fr 30px; gap: 8px; align-items: center; font-size: 12px; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+.rrow:hover { background: var(--hover); }
+.rrow .src { font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.rrow .r { font-family: var(--mono); text-align: right; color: var(--muted); }
+.rrow.chosen { background: var(--pick-soft); }
+.rrow.chosen .src { color: var(--pick); font-weight: 600; }
+.note { font-size: 12.5px; color: var(--muted); max-width: 60ch; }
+.kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
+@media (prefers-reduced-motion: no-preference) { .code tr td.t { transition: background-color .25s; } }
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <h1>ARDiff Refinement Explorer</h1>
+    <label class="muted" for="bench">벤치마크</label>
+    <select id="bench"></select>
+    <span id="verdict" class="verdict"></span>
+    <span class="grow"></span>
+    <span class="muted" style="font-size:12px"><span class="kbd">←</span> <span class="kbd">→</span> iteration 이동 · <span class="kbd">Space</span> 재생</span>
+  </div>
+
+  <div class="panel scrub">
+    <div class="ctrl">
+      <button id="prev" type="button" aria-label="이전 iteration">◀ 이전</button>
+      <button id="play" type="button">▶ 재생</button>
+      <button id="next" type="button" aria-label="다음 iteration">다음 ▶</button>
+      <input id="slider" type="range" min="0" value="0" style="flex:1 1 160px" aria-label="iteration">
+      <span class="now" id="now"></span>
+    </div>
+    <div class="steps" id="steps"></div>
+  </div>
+
+  <div class="main">
+    <div class="panel">
+      <div class="tabs" id="tabs"></div>
+      <div class="codebox" id="codebox"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="panel dec" id="dec"></div>
+  </div>
+</div>
+
+<script>
+const DATA = /*__DATA__*/[];
+const TABS = [
+  ["state", "원본 줄 상태"], ["iold", "IoldVARDiff.java"], ["inew", "InewVARDiff.java"],
+  ["z3", "Z3 수식"], ["jpf", "JPF 출력 (old)"]
+];
+let B = 0, I = 0, tab = "state", timer = null;
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const stripNum = f => f.replace(/_\d+$/, "");
+function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
+function lsSet(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
+
+function finalNeq(b, i){ return i === b.iters.length - 1 && /NOT/.test(b.verdict); }
+function stepClass(b, i){ const it = b.iters[i]; if (finalNeq(b, i)) return "s-final-neq"; return "s-" + (it.status || "UNKNOWN"); }
+
+function init(){
+  $("bench").innerHTML = DATA.map((b, i) => `<option value="${i}">${esc(b.name)} (${b.iters.length} iter)</option>`).join("");
+  $("tabs").innerHTML = TABS.map(([k, l]) => `<button type="button" data-tab="${k}">${l}</button>`).join("");
+  $("tabs").onclick = e => { const k = e.target.dataset.tab; if (k){ tab = k; lsSet("ardiff.tab", k); render(); } };
+  $("bench").onchange = e => { B = +e.target.value; I = 0; stop(); lsSet("ardiff.bench", B); renderBench(); };
+  $("prev").onclick = () => go(I - 1); $("next").onclick = () => go(I + 1);
+  $("play").onclick = () => timer ? stop() : play();
+  $("slider").oninput = e => go(+e.target.value);
+  document.addEventListener("keydown", e => {
+    if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT" && e.target.type !== "range") return;
+    if (e.key === "ArrowRight"){ go(I + 1); e.preventDefault(); }
+    else if (e.key === "ArrowLeft"){ go(I - 1); e.preventDefault(); }
+    else if (e.key === " "){ timer ? stop() : play(); e.preventDefault(); }
+  });
+  const sb = +lsGet("ardiff.bench"); if (sb >= 0 && sb < DATA.length) B = sb;
+  const st = lsGet("ardiff.tab"); if (st && TABS.some(t => t[0] === st)) tab = st;
+  $("bench").value = B;
+  renderBench();
+}
+function play(){ if (I >= DATA[B].iters.length - 1) I = -1; $("play").textContent = "❚❚ 정지"; timer = setInterval(() => { if (I >= DATA[B].iters.length - 1) stop(); else go(I + 1); }, 1400); go(I + 1); }
+function stop(){ clearInterval(timer); timer = null; $("play").textContent = "▶ 재생"; }
+function go(i){ const n = DATA[B].iters.length; I = Math.max(0, Math.min(n - 1, i)); render(); }
+
+function renderBench(){
+  const b = DATA[B];
+  const v = $("verdict"); v.textContent = b.verdict; v.className = "verdict v-" + b.verdict.split(" ")[0];
+  $("slider").max = b.iters.length - 1;
+  $("steps").innerHTML = b.iters.map((it, i) => `<button type="button" class="step" data-i="${i}" title="${esc(it.status || "")}">${i}<span class="dot ${stepClass(b, i)}"></span></button>`).join("");
+  $("steps").onclick = e => { const t = e.target.closest(".step"); if (t) go(+t.dataset.i); };
+  render();
+}
+
+function lineText(b, ln){ return (b.old.split("\n")[ln - 1] || "").trim(); }
+
+function renderCodeState(b, it, prev){
+  const conc = new Set(it.concrete), init = new Set(b.initial);
+  const fresh = new Set(prev ? it.concrete.filter(x => !prev.concrete.includes(x)) : []);
+  const rset = new Set((it.R || []).map(r => r[0]));
+  const lines = b.old.replace(/\n$/, "").split("\n");
+  let h = '<table class="code">';
+  lines.forEach((t, k) => {
+    const ln = k + 1; let cls = "", tag = "";
+    const trivial = /^\s*(\}|else|\{)?\s*$/.test(t) || ln <= 3;
+    if (init.has(ln)){ cls = "chg"; tag = "변경"; }
+    else if (conc.has(ln)){ cls = "conc"; tag = fresh.has(ln) ? "복원" : ""; }
+    else if (!trivial){ cls = "abs"; tag = "UF"; }
+    if (fresh.has(ln) && !init.has(ln)) cls += " fresh";
+    if (it.pick === ln){ cls += " pick"; tag = "다음 복원"; }
+    h += `<tr class="${cls}" id="L${ln}"><td class="n">${ln}</td><td class="tag">${tag}</td><td class="t">${esc(t) || " "}</td></tr>`;
+  });
+  $("codebox").innerHTML = h + "</table>";
+  $("legend").innerHTML = `<span><i style="background:var(--chg-soft)"></i>변경된 줄 (처음부터 구체)</span><span><i style="background:var(--abs)"></i>UF로 추상화</span><span><i style="background:var(--conc-soft)"></i>복원됨 (왼쪽 파란 선 = 이번에 복원)</span><span><i style="background:var(--pick-soft)"></i>H3가 고른 다음 복원 대상</span>`;
+}
+function renderJava(src, changed){
+  const ch = new Set(changed);
+  const rows = src.replace(/\n$/, "").split("\n").map((t, k) => {
+    const body = esc(t).replace(/\bUF_\w+/g, m => `<span class="uf">${m}</span>`);
+    return `<tr class="${ch.has(k + 1) ? "dl" : ""}"><td class="n">${k + 1}</td><td class="tag">${ch.has(k + 1) ? "±" : ""}</td><td class="t">${body || " "}</td></tr>`;
+  });
+  $("codebox").innerHTML = `<table class="code">${rows.join("")}</table>`;
+  $("legend").innerHTML = `<span><i style="background:var(--conc-soft)"></i>이전 iteration 대비 바뀐 줄 (UF 번호 변경은 무시)</span><span><b class="uf" style="color:var(--pick)">UF_x</b> 추상화된 호출</span>`;
+}
+function renderRaw(s, note){
+  $("codebox").innerHTML = `<pre class="raw">${esc(s || "(없음)")}</pre>`;
+  $("legend").innerHTML = `<span>${note}</span>`;
+}
+
+function renderDecision(b, it, i){
+  const last = i === b.iters.length - 1;
+  const st = it.status || "?";
+  let f = '<div><h3>이번 iteration의 판정</h3><div class="flow">';
+  f += `<div class="fstep"><b>1</b><span>Z3: old ≠ new 가 가능한가?</span><span class="pill p-${st}">${st}</span></div>`;
+  if (st === "UNSATISFIABLE") f += `<div class="fstep"><b>→</b><span>반례 없음 → <b style="color:var(--ok)">EQUIVALENT</b>로 종료</span></div>`;
+  if (st === "SATISFIABLE"){
+    const sc = it.satcheck || "?";
+    f += `<div class="fstep"><b>2</b><span>반례가 UF 때문일 수 있음 → old = new 가 가능하긴 한가?</span><span class="pill p-${sc}">${sc}</span></div>`;
+    if (sc === "UNSATISFIABLE") f += `<div class="fstep"><b>→</b><span>같을 수 없음 → <b style="color:var(--bad)">NOT EQUIVALENT</b>로 종료</span></div>`;
+  }
+  if (!last) f += `<div class="fstep"><b>→</b><span>결론 못 냄 → 문장 하나를 복원하고 다음 iteration으로</span></div>`;
+  else if (st !== "UNSATISFIABLE" && !(st === "SATISFIABLE" && it.satcheck === "UNSATISFIABLE")) f += `<div class="fstep"><b>→</b><span>${esc(b.verdict)}로 종료</span></div>`;
+  f += "</div></div>";
+
+  if (it.funcs && it.funcs.length){
+    const cand = new Set(it.cand || []), h1 = new Set(it.h1 || []);
+    const pickFns = new Set();
+    if (it.pick){ const t = lineText(b, it.pick); (it.cand || it.funcs).forEach(fn => { const v = stripNum(fn).replace(/^UF_/, ""); if (new RegExp("\\b" + v + "\\b").test(t)) pickFns.add(fn); }); }
+    f += `<div><h3>남은 UF ${it.funcs.length}개 · H1·H2 후보 ${cand.size}개</h3><div class="uflist">` +
+      it.funcs.map((fn, k) => {
+        const r = (it.h1res || [])[k];
+        const c = ["ufc", cand.has(fn) ? "cand" : "", h1.has(fn) ? "h1" : "", pickFns.has(fn) ? "chosen" : ""].join(" ");
+        return `<span class="${c}" title="H1 검사: ${r || "-"}">${fn}${r ? ` <span class="p-${r}">${r === "unknown" ? "?" : r}</span>` : ""}</span>`;
+      }).join("") + "</div>";
+    f += `<p class="note">회색 = 후보 아님 · 흰색 = H1/H2 후보 · 노란 테두리 = H1이 고른 함수 · 각 함수 옆은 H1의 Z3 검사 결과(sat이면 그 UF가 결과에 영향).</p></div>`;
+  }
+  if (it.R && it.R.length){
+    const rows = [...it.R].sort((a, c) => a[1] - c[1] || a[0] - c[0]);
+    f += `<div><h3>H3 순위 (R이 낮을수록 먼저 복원)</h3><div class="rank">` + rows.map(([ln, r]) =>
+      `<div class="rrow ${ln === it.pick ? "chosen" : ""}" data-ln="${ln}"><span class="mono muted">${ln}</span><span class="src">${esc(lineText(b, ln))}</span><span class="r">R=${r}</span></div>`).join("") + "</div>";
+    f += `<p class="note">줄을 누르면 원본 코드의 해당 위치로 이동해요. 같은 R끼리는 로그에 나온 순서대로 첫 번째가 선택됨.</p></div>`;
+  }
+  if (it.pick) f += `<div><h3>선택</h3><div class="fstep" style="border-color:var(--pick)"><span class="mono" style="color:var(--pick)">${it.pick}:</span><code>${esc(lineText(b, it.pick))}</code></div><p class="note">다음 iteration에서 이 문장을 UF 대신 원래 코드로 되돌려 다시 심볼릭 실행해요.</p></div>`;
+  $("dec").innerHTML = f;
+  $("dec").querySelectorAll(".rrow").forEach(r => r.onclick = () => { tab = "state"; render(); const el = $("L" + r.dataset.ln); if (el) el.scrollIntoView({ block: "center", behavior: "smooth" }); });
+}
+
+function render(){
+  const b = DATA[B], it = b.iters[I], prev = b.iters[I - 1];
+  $("slider").value = I;
+  $("now").textContent = `iteration ${I} / ${b.iters.length - 1}`;
+  $("steps").querySelectorAll(".step").forEach((s, k) => s.setAttribute("aria-current", k === I ? "true" : "false"));
+  $("tabs").querySelectorAll("button").forEach(t => t.setAttribute("aria-pressed", t.dataset.tab === tab ? "true" : "false"));
+  $("prev").disabled = I === 0; $("next").disabled = I === b.iters.length - 1;
+  const top = $("codebox").scrollTop;
+  if (tab === "state") renderCodeState(b, it, prev);
+  else if (tab === "iold") renderJava(it.iold, it.iold_changed);
+  else if (tab === "inew") renderJava(it.inew, it.inew_changed);
+  else if (tab === "z3") renderRaw(it.z3, "z3summary.txt: old/new 요약 수식과 Z3에 넘긴 최종 쿼리");
+  else renderRaw(it.jpf, "IoldVARDiffJPFOutput.txt: JPF-Symbc 심볼릭 실행 로그");
+  $("codebox").scrollTop = top;
+  renderDecision(b, it, I);
+}
+init();
+</script>
