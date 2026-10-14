@@ -3,7 +3,7 @@ public class newV{
     public static double snippet (double a)
     {
         double result = 0;//change
-        result = a*a;//change
+        result = a*Math.abs(a);//change
         return result;//change
     }
 }
