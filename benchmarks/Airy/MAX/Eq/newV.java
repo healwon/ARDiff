@@ -3,6 +3,7 @@ public class newV{
     public static double snippet(double a, double b) {
         if (a > b)//change
             return a;//change
-        return b;//change
+        else
+            return b;//change
     }
 }

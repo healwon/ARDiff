@@ -168,10 +168,21 @@ PY
   [ -f "$WORK/classes/GradDiff/GradDiff.class" ] && [ -f "$WORK/classes/DSE/DSE.class" ] || die "javac failed"
 }
 
-smoke_test() {
-  log "smoke test: Airy/MAX/Eq"
-  run_one Airy/MAX/Eq >/dev/null
-  grep -q "Output : EQUIVALENT" "$WORK/bench/Airy/MAX/Eq/debug.log" || die "smoke test failed, see $WORK/bench/Airy/MAX/Eq/debug.log"
+smoke_test() {  # fixed pair (original Airy/MAX/Eq), independent of edits to benchmarks/
+  local d="$WORK/bench/_smoke"
+  mkdir -p "$d"
+  printf 'public class oldV{\n    public static double snippet(double a, double b) {\n        if (a > b)\n            return a;\n        else\n            return b;\n    }\n}\n' > "$d/oldV.java"
+  printf 'public class newV{\n    public static double snippet(double a, double b) {\n        if (b < a)\n            return a;\n        else\n            return b;\n    }\n}\n' > "$d/newV.java"
+  log "smoke test: max(a, b) written two ways"
+  run_one "$d" >/dev/null
+  if ! grep -q "Output : EQUIVALENT" "$d/debug.log" 2>/dev/null; then
+    echo "----- last 40 lines of $d/debug.log -----" >&2
+    tail -40 "$d/debug.log" >&2 2>/dev/null || echo "(no debug.log)" >&2
+    for f in "$d"/instrumented/*JPFError.txt "$d"/instrumented/*Terminal.txt; do
+      [ -s "$f" ] && { echo "----- $f -----" >&2; tail -20 "$f" >&2; }
+    done
+    die "smoke test failed"
+  fi
   log "smoke test ok"
 }
 
@@ -192,8 +203,8 @@ run_one() {  # bench name relative to $WORK/bench, or an absolute dir; prints "n
       -cp "$WORK/classes:target/artifacts/Implementation_jar/*" Runner.Runner \
       --path1 "$d/oldV.java" --path2 "$d/newV.java" $TOOL_ARGS > "$d/debug.log" 2>&1) || true
   local n v
-  n=$(ls "$d/iterations" 2>/dev/null | wc -l)
-  v=$(grep -o "Output : [A-Z ]*" "$d/debug.log" | tail -1 | sed 's/Output : //; s/ *$//')
+  n=0; [ -d "$d/iterations" ] && n=$(ls "$d/iterations" | wc -l)
+  v=$(grep -o "Output : [A-Z ]*" "$d/debug.log" 2>/dev/null | tail -1 | sed 's/Output : //; s/ *$//' || true)
   echo "$1|$n|${v:-TIMEOUT/ERROR}"
 }
 
