@@ -1,5 +1,5 @@
 package demo.benchmarks.Ran.ran.NEq;
-public class oldV{
+public class newV{
     public static double snippet (int idum) {//idum is a global variable
         int IA=16807;
         int IM=2147483647;
@@ -11,7 +11,7 @@ public class oldV{
         double AM=1.0/IM;
         double RNMX=(1.0-EPS);
         int iy=0;
-        int iv0 = 0;
+        int iv0 = 0; 
         int j = 0;
         int k = 0;
         double temp = 0.0;
@@ -26,18 +26,18 @@ public class oldV{
                 if (idum < 0)
                     idum += IM;
                 if (j < NTAB)
-                iv0 = idum;
+                    iv0 = idum;
             }
             iy=iv0;
         }
         k=idum/IQ;
         idum=IA*(idum-k*IQ)-IR*k;
-        if (idum < 0)
+        if (idum < 0 && idum > 100)
             idum += IM;
         iy=iy/idum;
         if ((temp=AM*iy) > NDIV)
-            return RNMX;
-        else
             return temp;
+        else
+            return RNMX;
     }
 }
