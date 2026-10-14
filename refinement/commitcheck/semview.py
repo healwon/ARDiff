@@ -133,7 +133,15 @@ def scenarios(rep):
                         "confirmed": True, "refuted": False, "source": r["source"]})
     rank = lambda s: (0 if s["confirmed"] and s["kind"] == "region" else 1 if s["confirmed"] else 2 if not s["refuted"] else 3)
     out.sort(key=rank)
-    return out[:40]
+    # one entry per behaviour (old value, new value); the other inputs with the same pair are listed under it
+    groups = {}
+    for sc in out:
+        k = (str(sc["ret_old"]), str(sc["ret_new"]), sc["refuted"])
+        if k in groups:
+            groups[k]["more"].append(sc["inputs"])
+        else:
+            groups[k] = {**sc, "more": []}
+    return list(groups.values())[:12]
 
 
 def _path_lines(path):
@@ -189,12 +197,16 @@ def render(old_text, new_text, rep=None, uid="v"):
             tag = ("실행 확인" if s["confirmed"] else "실행 결과는 같음 (추상화로 인한 차이)" if s["refuted"] else "기호 분석")
             path = (f"경로 old #{s['old_path']} · new #{s['new_path']}" if s["kind"] == "region"
                     else f"입력 출처: {s.get('source', '')}")
+            more = ""
+            if s.get("more"):
+                others = "; ".join(", ".join(f"{n} = {_fmt(v)}" for n, v in m.items()) for m in s["more"][:30])
+                more = f'<span class="tag" title="{html.escape(others)}">같은 결과인 입력 {len(s["more"])}개 더</span>'
             btns.append(
                 f'<button type="button" class="sc{" weak" if s["refuted"] else ""}" data-sc="{k}">'
                 f'<code>{html.escape(inp)}</code> <span class="arrow">old <b>{html.escape(_fmt(s["ret_old"]))}</b> → new '
                 f'<b class="hl">{html.escape(_fmt(s["ret_new"]))}</b></span>'
-                f'<span class="tag">{html.escape(tag)} · {html.escape(path)}</span></button>')
-        picker = (f'<div class="scs"><div class="sch">결과가 달라지는 입력 {len(scs)}개 · 고르면 각 버전이 지나는 줄과 반환값을 코드에 표시</div>'
+                f'<span class="tag">{html.escape(tag)} · {html.escape(path)}</span>{more}</button>')
+        picker = (f'<div class="scs"><div class="sch">결과가 달라지는 경우 {len(scs)}가지 (old/new 반환값 조합별) · 고르면 각 버전이 지나는 줄과 반환값을 코드에 표시</div>'
                   f'{"".join(btns)}</div>')
     legend = ('<div class="lg"><span><i class="k del"></i>삭제된 토큰</span><span><i class="k add"></i>추가된 토큰</span>'
               + ('<span><i class="k cond"></i>선택한 입력이 지나는 조건</span><span><i class="k ret"></i>반환 줄</span>' if scs else "")

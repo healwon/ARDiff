@@ -471,7 +471,10 @@ def write_html(path, label, entries, viewer_ok):
         extra = "<span class='chip neq'>실행 결과 다름</span>" if e.get("exec_verdict") else ""
         cards.append(f"<section class='card {vc}{' neq' if e.get('exec_verdict') else ''}'><div class='head'><h3>{h(e['method'])}</h3><span>{extra} <span class='chip {vc}'>{h(v)}</span></span></div>"
                      f"<div class='muted'>{h(e['file'])}{' · ' if meta else ''}{' · '.join(meta)}</div>{body}</section>")
-    page = f"""<title>ARDiff Commit Check</title>
+    page = f"""<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARDiff Commit Check</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
 <style>{CSS}{semview.CSS}</style>
 <div class="wrap">

@@ -103,7 +103,11 @@ def build(dirpath):
         prev_old, prev_new = iold, inew
     rel = os.path.relpath(dirpath, os.path.join(HERE, "bench"))
     if rel.startswith(".."):
-        rel = os.path.basename(dirpath)
+        meta = os.path.join(dirpath, "meta.json")      # commit-check pair: show the method, not the folder
+        try:
+            rel = json.load(open(meta))["method"]
+        except (OSError, ValueError, KeyError):
+            rel = os.path.basename(dirpath)
     return {"name": rel, "verdict": verdict,
             "old": read(os.path.join(first, "oldV.java")), "new": read(os.path.join(first, "newV.java")),
             "initial": iters[0]["concrete"] if iters else [], "iters": iters}
@@ -115,7 +119,9 @@ def main():
     tpl = read(os.path.join(HERE, "viewer_template.html"))
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     with open(out, "w") as f:
-        f.write(tpl.replace("/*__DATA__*/[]", blob))
+        # standards mode + utf-8 when served as a plain file (GitHub Pages); harmless inside an artifact wrapper
+        f.write('<!doctype html>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+                + tpl.replace("/*__DATA__*/[]", blob))
     for b in data:
         print(b["name"], len(b["iters"]), b["verdict"], [it["pick"] for it in b["iters"]])
 
