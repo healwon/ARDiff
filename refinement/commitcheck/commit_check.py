@@ -234,16 +234,15 @@ def build_pairs(files, out_dir, only=None, jhome=None, do_compile=True):
                 e.update(state="skipped", reason="추가된 메서드" if key not in olds else "삭제된 메서드")
                 entries.append(e); continue
             (mo, co), (mn, cn) = olds[key], news[key]
-            if re.sub(r"\s+", " ", mo.text).strip() == re.sub(r"\s+", " ", mn.text).strip():
-                continue                                    # unchanged (whitespace at most)
+            if mo.text == mn.text:
+                continue                                    # unchanged
             e["old_lines"] = [mo.start_line, mo.end_line]
             e["new_lines"] = [mn.start_line, mn.end_line]
             e["old_text"], e["new_text"] = mo.text, mn.text
             e["diff"] = "".join(difflib.unified_diff(mo.text.splitlines(True), mn.text.splitlines(True),
                                                      "old", "new", n=3))
-            if re.sub(r"\s+", "", javasrc.strip_comments(mo.text)) == re.sub(r"\s+", "", javasrc.strip_comments(mn.text)):
-                e.update(state="done", verdict="EQUIVALENT", note="주석·공백만 바뀜 (ARDiff 실행 안 함)")
-                entries.append(e); continue
+            if mo.normalized() == mn.normalized():
+                e["note"] = "주석·공백만 바뀜"            # still run ARDiff: the verdict should come from the tool
             pkg = f"ardiffcc.p{len(entries):03d}"
             old_src, helpers_o, fields_o = wrap(f["old"], mo, co, "oldV", pkg)
             new_src, helpers_n, fields_n = wrap(f["new"], mn, cn, "newV", pkg)
