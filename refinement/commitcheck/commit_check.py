@@ -226,10 +226,23 @@ def build_pairs(files, out_dir, only=None, jhome=None, do_compile=True):
             entries.append({"file": f["path"], "method": "(파일 전체)", "state": "skipped",
                             "reason": f"Java 소스를 해석하지 못함: {ex}"})
             continue
+        # renamed class (e.g. `class A` -> `class B` in the same file): pair leftover methods by signature
+        # when the signature is unique among the leftovers on both sides
+        renamed = {}
+        lo = [k for k in olds if k not in news]
+        ln = [k for k in news if k not in olds]
+        for ko in lo:
+            sig = olds[ko][0].signature
+            cand_n = [kn for kn in ln if news[kn][0].signature == sig]
+            cand_o = [k for k in lo if olds[k][0].signature == sig]
+            if len(cand_n) == 1 and len(cand_o) == 1:
+                renamed[ko] = cand_n[0]
+        for ko, kn in renamed.items():
+            news[ko] = news.pop(kn)
         for key in sorted(set(olds) | set(news)):
             if only and not re.search(only, key):
                 continue
-            e = {"file": f["path"], "method": key}
+            e = {"file": f["path"], "method": key if key not in renamed else f"{key} → {renamed[key]}"}
             if key not in olds or key not in news:
                 e.update(state="skipped", reason="추가된 메서드" if key not in olds else "삭제된 메서드")
                 entries.append(e); continue
