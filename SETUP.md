@@ -28,23 +28,27 @@ repo의 **Settings → Pages → Build and deployment → Source**를 **GitHub A
 
 ## 3. 실행
 
-- **자동**: `examples/`, `refinement/`, workflow 파일이 바뀐 커밋을 main, master, docs 브랜치에 push하면 실행. docs에서 배포하려면 **Settings → Environments → github-pages → Deployment branches and tags**에 `docs`를 추가해야 함
-- **수동**: **Actions → ARDiff refinement viewer → Run workflow**
-  - `benchmarks`: 공백으로 구분한 예제 목록 (예: `Ran/ran/NEq Bess/bessk/NEq examples`). 비우면 기본 5개 + `examples/` 전체
-  - `tool_args`: ARDiff 옵션 (기본 `--tool A --H H123`)
+workflow 이름: **ARDiff commit check**. 커밋에서 바뀐 Java 메서드마다 ARDiff로 EQUIVALENT / NOT EQUIVALENT를 판정하고,
+NOT EQUIVALENT면 어떤 입력에서 결과가 달라지는지 보여 주는 보고서를 Pages에 올립니다.
 
-실행이 끝나면 결과는 다음 위치에 있습니다. (Actions에서 아직 실제로 돌려보지 않아 소요 시간은 확인 전)
+- **자동**: `.java` 파일이나 `refinement/`, workflow 파일이 바뀐 커밋을 main, master, docs에 push하면 실행.
+  그 push에 들어간 커밋 전체(`before..after`)를 검사. docs에서 배포하려면 **Settings → Environments → github-pages → Deployment branches and tags**에 `docs` 추가
+- **수동**: **Actions → ARDiff commit check → Run workflow**
+  - `target_repo`: 검사할 다른 저장소의 git URL (public). 비우면 이 저장소
+  - `commit`: 검사할 커밋 (부모 커밋과 비교, 기본 HEAD)
+  - `range`: `BASE..HEAD` 범위 (있으면 commit보다 우선)
+  - `only`: 메서드 이름 정규식
 
 | 위치 | 내용 |
 |---|---|
-| `https://<계정>.github.io/ARDiff/` | interactive 뷰어 |
-| `https://<계정>.github.io/ARDiff/runs/summary.txt` | 예제별 iteration 수와 판정 |
-| `https://<계정>.github.io/ARDiff/runs/<예제>/debug.log` | 예제별 전체 로그 |
-| Actions 실행 화면의 Summary | 같은 판정 표 |
+| `https://<계정>.github.io/ARDiff/` | 커밋 검사 보고서 (메서드별 판정, diff, NEQ 의미 차이) |
+| `https://<계정>.github.io/ARDiff/viewer.html` | refinement 과정 뷰어 (보고서에서 메서드별로 링크) |
+| `https://<계정>.github.io/ARDiff/report.md`, `report.json` | 같은 내용의 Markdown / JSON |
+| `https://<계정>.github.io/ARDiff/pairs/<메서드>/` | ARDiff 입력(oldV/newV.java)과 debug.log |
+| Actions 실행 화면의 Summary | report.md 내용 |
 
-## 4. 새 입력 넣기
-
-`examples/<이름>/oldV.java`, `examples/<이름>/newV.java`를 추가하고 push. 입력 규칙은 `examples/README.md` 참고.
+NOT EQUIVALENT가 나와도 job은 성공으로 끝납니다 (판정 결과일 뿐 오류가 아니므로).
+벤치마크 refinement 뷰어만 만들려면 로컬에서 `refinement/ardiff-workflow.sh all`을 쓰세요.
 
 ## 러너 환경 메모
 

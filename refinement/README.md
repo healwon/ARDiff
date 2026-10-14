@@ -120,6 +120,63 @@ cd bench/Ran/ran/NEq/iterations
 3. H1·H2로 결과에 영향을 주는 UF 후보를 고르고, H3가 후보 문장에 순위(R, 낮을수록 먼저)를 매겨 하나를 원래 코드로 복원
 4. 2로 돌아가 반복
 
+## 커밋 단위 EQ/NEQ 판정 (`commit`)
+
+커밋(또는 diff)에서 **바뀐 메서드마다** ARDiff를 돌려 EQUIVALENT / NOT EQUIVALENT를 판정하고,
+NOT EQUIVALENT면 ARDiff 로그로 **어떤 입력에서 어떻게 달라지는지** 보여줍니다.
+
+```bash
+./ardiff-workflow.sh commit                         # 현재 repo의 HEAD vs HEAD^
+./ardiff-workflow.sh commit --repo ~/proj --commit abc123
+./ardiff-workflow.sh commit --repo ~/proj --range main..feature
+./ardiff-workflow.sh commit --repo ~/proj --worktree   # 커밋 전 변경 사항
+./ardiff-workflow.sh commit --repo ~/proj --patch fix.diff --base HEAD
+./ardiff-workflow.sh commit --old A.java --new B.java  # git 없이 파일 두 개
+./ardiff-workflow.sh commit ... --no-run            # 메서드 쌍만 만들고 실행하지 않음
+```
+
+| 옵션 | 설명 |
+|---|---|
+| `--out DIR` | 결과 폴더 (기본 `./ardiff-commit-report`) |
+| `--only REGEX` | `Class.method(타입,...)`에 맞는 메서드만 |
+| `--no-z3` / `--no-exec` | 차이 영역 분석 / 실제 실행 검증 생략 |
+| `--cores --jobs --timeout --heap` | `ardiff-workflow.sh`와 같은 실행 설정 (기본 코어 120-159) |
+
+결과 폴더:
+
+```
+report.html   메서드별 판정, 코드 diff, NEQ면 의미 차이 (브라우저로 열기)
+report.md     같은 내용의 Markdown (PR 코멘트용)
+report.json   전체 데이터
+viewer.html   refinement 과정 뷰어 (report.html에서 링크)
+pairs/NNN_<Class.method>/   ARDiff 입력(oldV/newV.java)과 실행 결과 전체
+```
+
+종료 코드: NOT EQUIVALENT가 하나라도 있으면 `2`, 아니면 `0` (CI에서 사용 가능).
+
+### 처리 과정
+
+1. **바뀐 메서드 찾기**: 두 버전의 `.java`에서 메서드를 `Class.name(파라미터 타입)`으로 맞추고, 주석·공백을 뺀 코드가 다르면 대상.
+   주석·공백만 바뀐 메서드는 실행 없이 EQUIVALENT, 추가·삭제된 메서드는 건너뜀
+2. **입력 쌍 만들기**: 메서드를 `oldV`/`newV` 클래스로 감쌈. 같은 클래스에서 호출하는 메서드(재귀적으로)와 쓰는 필드, import를 함께 넣음.
+   `void` 반환이나 원시 타입이 아닌 파라미터는 ARDiff가 다루지 못해 건너뛰고, 감싼 코드가 컴파일되지 않으면(다른 클래스에 의존 등) 건너뜀
+3. **ARDiff 실행**: `ardiff-workflow.sh rundir`로 debug 모드 + iteration 스냅샷
+4. **NOT EQUIVALENT 설명** (`commitcheck/semdiff.py`, 마지막 iteration 기준)
+   - **ARDiff 반례**: `z3summary.txt`의 Z3 모델 (입력값과 old 반환값). 추상화된 공통 코드(UF)가 남아 있으면 그 값에 기대는 반례라고 표시
+   - **차이 영역**: old/new 요약 수식(`*ToSolve.txt`)을 경로별로 나눠, old 경로 i와 new 경로 j의 조건이 동시에 성립하면서 반환값이 다를 수 있는 쌍을 z3로 찾음.
+     각 쌍마다 예시 입력과, JPF 출력의 경로 조건·반환식(소스 줄 포함)을 보여 줌
+   - **실제 실행 검증**: 원래 old/new 메서드를 컴파일해 반례, 차이 영역 예시, JPF가 만든 테스트 입력으로 직접 실행하고 결과가 다른 입력을 표로 보여 줌.
+     추상화 때문에 생긴 가짜 차이를 걸러 내는 단계
+
+ARDiff 실행 결과 하나만 분석하려면: `python3 commitcheck/semdiff.py bench/Ran/ran/NEq`
+
+### 한계
+
+- Java 파서가 아니라 가벼운 스캐너로 메서드를 찾음. 일반적인 코드는 되지만 익명 클래스·람다가 많은 파일은 놓칠 수 있음
+- 다른 클래스의 메서드나 인스턴스 상태에 의존하는 메서드는 감싼 코드가 컴파일되지 않아 건너뜀
+- 정수/실수 연산 위주의 메서드가 대상. 루프는 ARDiff의 loop bound(`--b`) 안에서만 분석됨
+- 차이 영역 분석은 경로 쌍이 많으면 최대 900쌍까지만 검사(`report.json`의 `truncated`)
+
 ## 파일 구성
 
 | 파일 | 역할 |
@@ -128,6 +185,9 @@ cd bench/Ran/ran/NEq/iterations
 | `build_viewer.py` | `debug.log` + `iterations/`를 파싱해 HTML 생성 |
 | `viewer_template.html` | 뷰어 템플릿 |
 | `iterdiff.sh` | UF 번호를 무시하는 iteration 간 diff |
+| `commitcheck/commit_check.py` | 커밋 단위 EQ/NEQ 판정 (`commit` 명령) |
+| `commitcheck/semdiff.py` | ARDiff 결과 해석: NEQ의 의미 차이 분석 |
+| `commitcheck/javasrc.py` | 메서드 추출용 가벼운 Java 스캐너 |
 | `scan.txt` | `scan` 결과 (`iteration 수\|판정\|경로`), git에서 제외 |
 
 GitHub Actions/Pages 연동은 repo 루트의 `SETUP.md`와 `.github/workflows/refinement-pages.yml`을 참고하세요.

@@ -102,6 +102,8 @@ def build(dirpath):
         })
         prev_old, prev_new = iold, inew
     rel = os.path.relpath(dirpath, os.path.join(HERE, "bench"))
+    if rel.startswith(".."):
+        rel = os.path.basename(dirpath)
     return {"name": rel, "verdict": verdict,
             "old": read(os.path.join(first, "oldV.java")), "new": read(os.path.join(first, "newV.java")),
             "initial": iters[0]["concrete"] if iters else [], "iters": iters}

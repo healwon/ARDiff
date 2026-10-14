@@ -149,6 +149,7 @@ function init(){
     else if (e.key === " "){ timer ? stop() : play(); e.preventDefault(); }
   });
   const sb = +lsGet("ardiff.bench"); if (sb >= 0 && sb < DATA.length) B = sb;
+  const hb = /^#b(\d+)$/.exec(location.hash); if (hb && +hb[1] < DATA.length) B = +hb[1];
   const st = lsGet("ardiff.tab"); if (st && TABS.some(t => t[0] === st)) tab = st;
   $("bench").value = B;
   renderBench();

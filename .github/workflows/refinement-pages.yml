@@ -1,21 +1,30 @@
-# Runs ARDiff (debug + per-iteration snapshots) on GitHub Actions and publishes the refinement viewer to GitHub Pages.
-name: ARDiff refinement viewer
+# Checks the Java methods changed by a commit with ARDiff (EQUIVALENT / NOT EQUIVALENT + semantic difference)
+# and publishes the report to GitHub Pages: index.html = commit report, viewer.html = refinement process.
+name: ARDiff commit check
 
 on:
   workflow_dispatch:
     inputs:
-      benchmarks:
-        description: "Benchmarks, space separated (e.g. Ran/ran/NEq examples). Empty = defaults + examples/"
+      target_repo:
+        description: "Git URL of the repo to check. Empty = this repo"
         required: false
         default: ""
-      tool_args:
-        description: "ARDiff options"
+      commit:
+        description: "Commit to check against its parent (default HEAD). Ignored when range is set"
         required: false
-        default: "--tool A --H H123"
+        default: ""
+      range:
+        description: "BASE..HEAD range instead of a single commit (e.g. main..feature)"
+        required: false
+        default: ""
+      only:
+        description: "Regex on Class.method(sig) to limit methods (optional)"
+        required: false
+        default: ""
   push:
     branches: [main, master, docs]
     paths:
-      - "examples/**"
+      - "**.java"
       - "refinement/**"
       - ".github/workflows/refinement-pages.yml"
 
@@ -36,10 +45,17 @@ jobs:
       JOBS: "2"
       HEAP: "5G"
       TIMEOUT: "600"
-      TOOL_ARGS: ${{ inputs.tool_args || '--tool A --H H123' }}
-      BENCHMARKS: ${{ inputs.benchmarks }}
+      TARGET_REPO: ${{ inputs.target_repo }}
+      COMMIT: ${{ inputs.commit }}
+      RANGE: ${{ inputs.range }}
+      ONLY: ${{ inputs.only }}
+      EVENT: ${{ github.event_name }}
+      PUSH_BEFORE: ${{ github.event.before }}
+      PUSH_AFTER: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # commit check needs history
 
       - name: Set up Zulu JDK 8 with JavaFX
         uses: actions/setup-java@v4
@@ -53,32 +69,57 @@ jobs:
 
       - name: Setup ARDiff
         run: |
-          chmod +x Implementation/z3 refinement/*.sh
+          chmod +x Implementation/z3 refinement/*.sh refinement/commitcheck/*.py
           ARDIFF_JAVA_HOME="$JAVA_HOME" refinement/ardiff-workflow.sh setup
 
-      - name: Run ARDiff
-        # BENCHMARKS is word-split on purpose (space separated list)
-        run: refinement/ardiff-workflow.sh run $BENCHMARKS | tee run-summary.txt
+      - name: Choose what to check
+        run: |
+          repo="$GITHUB_WORKSPACE"
+          if [ -n "$TARGET_REPO" ]; then
+            git clone --quiet "$TARGET_REPO" "$RUNNER_TEMP/target"
+            repo="$RUNNER_TEMP/target"
+          fi
+          if [ -n "$RANGE" ]; then
+            sel="--range $RANGE"
+          elif [ -n "$COMMIT" ]; then
+            sel="--commit $COMMIT"
+          elif [ "$EVENT" = push ] && [ -z "$TARGET_REPO" ] \
+               && [ -n "$PUSH_BEFORE" ] && ! [[ "$PUSH_BEFORE" =~ ^0+$ ]] \
+               && git -C "$repo" cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+            sel="--range $PUSH_BEFORE..$PUSH_AFTER"     # everything in this push
+          else
+            sel="--commit HEAD"
+          fi
+          echo "CHECK_REPO=$repo" >> "$GITHUB_ENV"
+          echo "CHECK_SEL=$sel" >> "$GITHUB_ENV"
+          echo "checking: ${TARGET_REPO:-this repo} $sel"
 
-      - name: Render viewer
-        run: refinement/ardiff-workflow.sh render $BENCHMARKS
+      - name: Run commit check
+        run: |
+          args=(--repo "$CHECK_REPO" --out "$RUNNER_TEMP/report")
+          [ -n "$ONLY" ] && args+=(--only "$ONLY")
+          # CHECK_SEL is "--range X" or "--commit X": word-split on purpose
+          set +e
+          refinement/ardiff-workflow.sh commit $CHECK_SEL "${args[@]}"
+          rc=$?
+          set -e
+          # 2 = at least one NOT EQUIVALENT method: a valid result, not a failure
+          [ $rc -eq 0 ] || [ $rc -eq 2 ] || exit $rc
+          cat "$RUNNER_TEMP/report/report.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Assemble site
         run: |
-          mkdir -p _site/runs
-          cp refinement/refinement-viewer.html _site/index.html
-          cp run-summary.txt _site/runs/summary.txt
-          cd refinement/bench
-          find . -name debug.log | while read -r f; do
-            d=$(dirname "$f"); [ -d "$d/iterations" ] || continue
-            mkdir -p "../../_site/runs/$d" && cp "$f" "../../_site/runs/$d/"
-          done
-          {
-            echo "### ARDiff results"
-            echo '```'
-            cat ../../run-summary.txt
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          r="$RUNNER_TEMP/report"
+          mkdir -p _site
+          cp "$r/report.html" _site/index.html
+          cp "$r/report.md" "$r/report.json" _site/
+          [ -f "$r/viewer.html" ] && cp "$r/viewer.html" _site/
+          # ARDiff inputs and logs per method, for anyone who wants the raw data
+          if [ -d "$r/pairs" ]; then
+            mkdir -p _site/pairs
+            (cd "$r/pairs" && find . \( -name 'oldV.java' -o -name 'newV.java' -o -name 'debug.log' -o -name 'meta.json' \) \
+               -not -path '*/iterations/*' -not -path '*/instrumented/*' -exec cp --parents {} "$GITHUB_WORKSPACE/_site/pairs/" \;)
+          fi
 
       - uses: actions/upload-pages-artifact@v3
         with:

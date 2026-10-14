@@ -3,3 +3,4 @@ classes/
 src/
 scan.txt
 refinement-viewer.html
+__pycache__/

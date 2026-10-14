@@ -7,6 +7,8 @@
 #   ardiff-workflow.sh render [bench...]        build $OUT_HTML from runs already done
 #   ardiff-workflow.sh scan                     run all benchmarks once, rank by iteration count -> scan.txt
 #   ardiff-workflow.sh all    [bench...]        setup + run + render
+#   ardiff-workflow.sh rundir DIR...            run on arbitrary dirs holding oldV.java/newV.java (absolute or relative paths)
+#   ardiff-workflow.sh commit [options]         EQ/NEQ check of methods changed by a commit (commitcheck/commit_check.py --help)
 #
 # bench names are relative to $WORK/bench, e.g. Ran/ran/NEq.  "--top N" picks the N with most iterations from scan.txt.
 # "examples" = every pair under $EXAMPLES_DIR (copied to bench/examples/). No bench args = defaults + examples.
@@ -180,9 +182,10 @@ cmd_setup() {
 }
 
 # ---------------------------------------------------------------- run
-run_one() {  # bench name relative to $WORK/bench; prints "name|iterations|verdict"
+run_one() {  # bench name relative to $WORK/bench, or an absolute dir; prints "name|iterations|verdict"
   load_env
   local d="$WORK/bench/$1"
+  case "$1" in /*) d=$1 ;; esac
   [ -f "$d/oldV.java" ] || die "no oldV.java in $d"
   rm -rf "$d/instrumented" "$d/outputs" "$d/z3models" "$d/iterations"
   (cd "$IMPL" && timeout "$TIMEOUT" taskset -c "$CORES" java -Djava.library.path=jpf-git/jpf-symbc/lib -Xmx"$HEAP" \
@@ -254,7 +257,11 @@ case "${1:-}" in
   render) shift; cmd_render "$@" ;;
   scan)   cmd_scan ;;
   all)    shift; cmd_setup; cmd_run "$@"; cmd_render "$@" ;;
+  rundir) shift; load_env
+          [ $# -gt 0 ] || die "rundir needs at least one directory"
+          for x in "$@"; do realpath "$x"; done | xargs -P "$JOBS" -I{} "$0" _one {} | table ;;
+  commit) shift; exec python3 "$WORK/commitcheck/commit_check.py" "$@" ;;
   _one)   run_one "$2" ;;
   _scan)  scan_one "$2" ;;
-  *)      sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *)      sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
