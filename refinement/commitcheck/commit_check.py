@@ -24,6 +24,7 @@ REFINEMENT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import javasrc  # noqa: E402
 import semdiff  # noqa: E402
+import semview  # noqa: E402
 
 JAVA_PRIMS = semdiff.JAVA_PRIMS
 PRIM_ARRAYS = {t + "[]" for t in JAVA_PRIMS}
@@ -159,7 +160,7 @@ def imports_of(src):
     return [l.strip() for l in src.splitlines() if re.match(r"\s*import\s+[\w.*]+\s*;", l)]
 
 
-def wrap(src, method, cls, new_name):
+def wrap(src, method, cls, new_name, pkg):
     helpers = helper_closure(method, cls)
     fields = []
     for m in [method] + helpers:
@@ -170,7 +171,8 @@ def wrap(src, method, cls, new_name):
     def rename(t):
         return re.sub(r"(?<![\w$.])" + re.escape(cls.name) + r"\s*\.", new_name + ".", t)
     body = ["    " + rename(m.text) for m in [method] + helpers]
-    lines = imports_of(src) + ["", f"public class {new_name} {{"]
+    # own package per pair: ARDiff compiles to <package>.instrumented.IoldVARDiff, so parallel runs must not share it
+    lines = [f"package {pkg};"] + imports_of(src) + ["", f"public class {new_name} {{"]
     lines += ["    " + f for f in fields] + ([""] if fields else [])
     for b in body:
         lines += [b, ""]
@@ -232,17 +234,19 @@ def build_pairs(files, out_dir, only=None, jhome=None, do_compile=True):
                 e.update(state="skipped", reason="추가된 메서드" if key not in olds else "삭제된 메서드")
                 entries.append(e); continue
             (mo, co), (mn, cn) = olds[key], news[key]
-            if mo.normalized() == mn.normalized():
-                continue                                    # unchanged
+            if re.sub(r"\s+", " ", mo.text).strip() == re.sub(r"\s+", " ", mn.text).strip():
+                continue                                    # unchanged (whitespace at most)
             e["old_lines"] = [mo.start_line, mo.end_line]
             e["new_lines"] = [mn.start_line, mn.end_line]
+            e["old_text"], e["new_text"] = mo.text, mn.text
             e["diff"] = "".join(difflib.unified_diff(mo.text.splitlines(True), mn.text.splitlines(True),
                                                      "old", "new", n=3))
             if re.sub(r"\s+", "", javasrc.strip_comments(mo.text)) == re.sub(r"\s+", "", javasrc.strip_comments(mn.text)):
                 e.update(state="done", verdict="EQUIVALENT", note="주석·공백만 바뀜 (ARDiff 실행 안 함)")
                 entries.append(e); continue
-            old_src, helpers_o, fields_o = wrap(f["old"], mo, co, "oldV")
-            new_src, helpers_n, fields_n = wrap(f["new"], mn, cn, "newV")
+            pkg = f"ardiffcc.p{len(entries):03d}"
+            old_src, helpers_o, fields_o = wrap(f["old"], mo, co, "oldV", pkg)
+            new_src, helpers_n, fields_n = wrap(f["new"], mn, cn, "newV", pkg)
             issues, warns = preflight(mo, mn, fields_o, fields_n)
             e.update(helpers_old=helpers_o, helpers_new=helpers_n, warnings=warns,
                      params=[n for _, n in mo.params])
@@ -284,6 +288,8 @@ def analyze(entries, a, jhome):
         e["state"] = "done"
         e["verdict"] = rep["verdict"]
         e["analysis"] = rep
+        if rep.get("exec_verdict"):
+            e["exec_verdict"] = rep["exec_verdict"]
 
 
 # ------------------------------------------------------------------ reports
@@ -306,11 +312,13 @@ def write_markdown(path, label, entries):
     L.append("|---|---|---|")
     for e in entries:
         res = e.get("verdict") or e["state"]
+        if e.get("exec_verdict"):
+            res += " (실행 결과는 다름)"
         if e["state"] == "skipped":
             res = f"건너뜀: {e['reason']}"
         L.append(f"| `{e['method']}` | {e['file']} | {res} |")
     for e in entries:
-        if e.get("analysis") and e["verdict"] == "NOT EQUIVALENT":
+        if e.get("analysis") and (e["verdict"] == "NOT EQUIVALENT" or e.get("exec_verdict")):
             L += ["", semdiff.to_markdown(e["analysis"], e["method"])]
     open(path, "w").write("\n".join(L) + "\n")
 
@@ -343,6 +351,7 @@ def path_html(p, title):
 def neq_html(rep):
     out = []
     ex = rep.get("execution") or {}
+    out.append("<details><summary class='muted'>근거 자세히 (실행 결과 표, 기호 경로, ARDiff 반례)</summary>")
     if ex.get("runs"):
         diff = [r for r in ex["runs"] if r["differs"]]
         same = len(ex["runs"]) - len(diff)
@@ -352,7 +361,7 @@ def neq_html(rep):
                        f"<td>{h(r['old'])}</td><td class='hl'>{h(r['new'])}</td><td class='muted'>{h(r['source'])}</td></tr>"
                        for r in diff[:30])
         out.append(f"<h4>실제 실행으로 확인한 차이 <span class='muted'>(입력 {len(ex['runs'])}개 중 {len(diff)}개 다름, {same}개 같음)</span></h4>")
-        out.append(f"<div class='scroll'><table><tr>{head}<th>old 결과</th><th>new 결과</th><th>입력 출처</th></tr>{rows}</table></div>"
+        out.append(f"<div class='scroll'><table class='plain'><tr>{head}<th>old 결과</th><th>new 결과</th><th>입력 출처</th></tr>{rows}</table></div>"
                    if diff else "<p class='muted'>시도한 입력에서는 결과가 같았음. 아래 차이 영역은 추상화(UF) 때문에 생긴 것일 수 있음.</p>")
     elif ex.get("error"):
         out.append(f"<p class='muted'>실행 검증 건너뜀: {h(ex['error'])}</p>")
@@ -373,6 +382,7 @@ def neq_html(rep):
         out.append(f"<p class='muted'>ARDiff가 찾은 반례: <code>{h(ce['inputs'])}</code>, old 반환 {h(ce['ret_old'])}"
                    + (f". 이 반례는 아직 추상화된 공통 코드(UF {len(ce['ufs'])}개)의 임의 값에 기대고 있어 실제 실행 결과와 다를 수 있음." if ce["uf_dependent"] else ".")
                    + "</p>")
+    out.append("</details>")
     for n in rep.get("notes", []):
         out.append(f"<p class='muted'>참고: {h(n)}</p>")
     return "".join(out)
@@ -380,12 +390,12 @@ def neq_html(rep):
 
 CSS = """
 :root{--bg:#f5f6f8;--panel:#fff;--fg:#1a2130;--muted:#5e6879;--rule:#d8dde6;--eq:#23824f;--neq:#bf3a2b;--unk:#b07a12;
---add:#e3f4e8;--del:#fbe6e3;--hl:#bf3a2b;--sans:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+--add:#e3f4e8;--del:#fbe6e3;--hl:#bf3a2b;--sem:#6b3fb3;--semsoft:#efe6fb;--sans:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
 --mono:"JetBrains Mono",ui-monospace,Menlo,monospace}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#11151c;--panel:#192029;--fg:#e2e7ef;--muted:#98a2b3;--rule:#2b3340;
---eq:#4fbf82;--neq:#ec6e5f;--unk:#e0b04a;--add:#173323;--del:#3d1d1a;--hl:#ec6e5f;color-scheme:dark}}
+--eq:#4fbf82;--neq:#ec6e5f;--unk:#e0b04a;--add:#173323;--del:#3d1d1a;--hl:#ec6e5f;--sem:#b892f0;--semsoft:#2e2342;color-scheme:dark}}
 :root[data-theme="dark"]{--bg:#11151c;--panel:#192029;--fg:#e2e7ef;--muted:#98a2b3;--rule:#2b3340;--eq:#4fbf82;--neq:#ec6e5f;--unk:#e0b04a;
---add:#173323;--del:#3d1d1a;--hl:#ec6e5f;color-scheme:dark}
+--add:#173323;--del:#3d1d1a;--hl:#ec6e5f;--sem:#b892f0;--semsoft:#2e2342;color-scheme:dark}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.55}
 .wrap{max-width:1100px;margin:0 auto;padding-inline:16px;padding-block:24px 56px;display:grid;gap:16px}
 h1{font-size:20px;margin:0}h3{font-size:15px;margin:0;font-family:var(--mono);word-break:break-all}h4{font-size:13.5px;margin:14px 0 6px}
@@ -397,8 +407,8 @@ code,.mono{font-family:var(--mono);font-size:12.5px}.muted{color:var(--muted)}
 .head{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;justify-content:space-between}
 .diff{font-family:var(--mono);font-size:12px;border:1px solid var(--rule);border-radius:6px;overflow-x:auto;margin-top:10px}
 .dl{white-space:pre;padding:0 10px}.dl.add{background:var(--add)}.dl.del{background:var(--del)}.dl.hunk{color:var(--muted)}
-table{border-collapse:collapse;font-size:13px}td,th{border-bottom:1px solid var(--rule);padding:4px 10px;text-align:left;font-family:var(--mono);font-size:12px}
-th{font-family:var(--sans);font-weight:500;color:var(--muted)}.hl{color:var(--hl);font-weight:600}.scroll{overflow-x:auto}
+table.plain{border-collapse:collapse;font-size:13px}.plain td,.plain th{border-bottom:1px solid var(--rule);padding:4px 10px;text-align:left;font-family:var(--mono);font-size:12px}
+.plain th{font-family:var(--sans);font-weight:500;color:var(--muted)}details{margin-top:8px}summary{cursor:pointer}.hl{color:var(--hl);font-weight:600}.scroll{overflow-x:auto}
 .region{border:1px solid var(--rule);border-radius:6px;padding:8px 10px;margin-bottom:8px}.wit{margin-bottom:6px}
 .pp{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}@media(max-width:760px){.pp{grid-template-columns:minmax(0,1fr)}}
 .path ul{margin:4px 0;padding-left:16px}.path li{margin:2px 0}.ptitle{font-size:12px;color:var(--muted)}
@@ -427,18 +437,31 @@ def write_html(path, label, entries, viewer_ok):
             meta.append(h(e["note"]))
         if rep.get("reason"):
             meta.append("이유: " + h(rep["reason"]))
-        body = diff_html(e["diff"]) if e.get("diff") else ""
+        body = ""
+        if e.get("dir") and os.path.exists(os.path.join(e["dir"], "oldV.java")):
+            otext = open(os.path.join(e["dir"], "oldV.java")).read()
+            ntext = open(os.path.join(e["dir"], "newV.java")).read()
+        else:
+            otext, ntext = e.get("old_text"), e.get("new_text")
+        if otext is not None and ntext is not None:
+            show_sem = v == "NOT EQUIVALENT" or e.get("exec_verdict")
+            body += semview.render(otext, ntext, rep if show_sem else None, uid=f"sv{len(cards)}")
+        elif e.get("diff"):
+            body += diff_html(e["diff"])
         for w in e.get("warnings", []):
             body += f"<p class='muted'>주의: {h(w)}</p>"
         if e.get("compile_error"):
             body += f"<details><summary class='muted'>컴파일 오류</summary><pre class='mono'>{h(e['compile_error'])}</pre></details>"
-        if v == "NOT EQUIVALENT":
+        if v == "NOT EQUIVALENT" or e.get("exec_verdict"):
             body += neq_html(rep)
-        cards.append(f"<section class='card {vc}'><div class='head'><h3>{h(e['method'])}</h3><span class='chip {vc}'>{h(v)}</span></div>"
+        elif v == "UNKNOWN" and rep.get("execution", {}).get("runs"):
+            body += f"<p class='muted'>실제 실행: 입력 {len(rep['execution']['runs'])}개에서 old/new 결과가 모두 같았음 (동등하다는 증명은 아님)</p>"
+        extra = "<span class='chip neq'>실행 결과 다름</span>" if e.get("exec_verdict") else ""
+        cards.append(f"<section class='card {vc}{' neq' if e.get('exec_verdict') else ''}'><div class='head'><h3>{h(e['method'])}</h3><span>{extra} <span class='chip {vc}'>{h(v)}</span></span></div>"
                      f"<div class='muted'>{h(e['file'])}{' · ' if meta else ''}{' · '.join(meta)}</div>{body}</section>")
     page = f"""<title>ARDiff Commit Check</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
-<style>{CSS}</style>
+<style>{CSS}{semview.CSS}</style>
 <div class="wrap">
 <header><h1>ARDiff Commit Check</h1><div class="muted">{h(label)}</div></header>
 <div class="counts">{chips or "<span class='muted'>바뀐 메서드 없음</span>"}</div>
@@ -503,7 +526,7 @@ def main():
     write_html(os.path.join(out, "report.html"), label, entries, viewer_ok)
     print(open(os.path.join(out, "report.md")).read())
     print(f"[commit-check] report: {os.path.join(out, 'report.html')}", file=sys.stderr)
-    if any(e.get("verdict") == "NOT EQUIVALENT" for e in entries):
+    if any(e.get("verdict") == "NOT EQUIVALENT" or e.get("exec_verdict") for e in entries):
         sys.exit(2)
 
 

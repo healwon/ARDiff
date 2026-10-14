@@ -12,7 +12,7 @@ For a NEQ verdict it collects, from the last iteration:
 
 usage: semdiff.py RUN_DIR [--z3 PATH] [--java-home DIR] [--json OUT] [--no-z3] [--no-exec]
 """
-import argparse, json, os, re, shutil, subprocess, sys, tempfile
+import argparse, difflib, itertools, json, os, random, re, shutil, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -175,6 +175,13 @@ def parse_model(z3summary):
     return defs
 
 
+def unwrap(x):
+    """ARDiff writes "(" + summary + ")": ((= Ret 1)) -> (= Ret 1)."""
+    while isinstance(x, list) and len(x) == 1 and isinstance(x[0], list):
+        x = x[0]
+    return x
+
+
 def parse_tosolve(text):
     """-> (declarations text, old summary sx, new summary sx) from *ToSolve.txt."""
     k = text.find("(assert")
@@ -184,11 +191,11 @@ def parse_tosolve(text):
     forms = [f for f in sx_parse_all(text[k:]) if isinstance(f, list) and f and f[0] == "assert"]
     if len(forms) < 2:
         return None
-    old = forms[0][1]
+    old = unwrap(forms[0][1])
     neg = forms[1][1]                      # (not (= OLD NEW))
     if not (isinstance(neg, list) and neg[0] == "not" and isinstance(neg[1], list) and neg[1][0] == "="):
         return None
-    return decls, sx_subst(old, {}), sx_subst(neg[1][2], {})
+    return decls, sx_subst(old, {}), sx_subst(unwrap(neg[1][2]), {})
 
 
 def parse_summaries_from_z3summary(text):
@@ -239,6 +246,43 @@ def parse_jpf_paths(text, src_lines):
                 cons.append(item)
         paths.append({"constraints": cons, "ret": ret})
     return paths
+
+
+def line_map(instrumented_lines, pair_lines):
+    """1-based instrumented line -> 1-based line of the pair source (oldV/newV.java) with the same code."""
+    def key(l):
+        return re.sub(r"\s+", "", javasrc.strip_comments(l))
+    a, b = [key(l) for l in instrumented_lines], [key(l) for l in pair_lines]
+    out = {}
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag == "equal":
+            for k in range(i2 - i1):
+                if a[i1 + k]:
+                    out[i1 + k + 1] = j1 + k + 1
+        elif tag == "replace":
+            # "x = UF_x_3(...)" stands for the original line(s) assigning x inside this block
+            used = set()
+            for i in range(i1, i2):
+                m = re.match(r"(?:[\w$<>\[\]]+)??([A-Za-z_$][\w$]*)=UF_", a[i])
+                cand = None
+                if m:
+                    var = m.group(1)
+                    for j in range(j1, j2):
+                        if j not in used and re.search(r"(?<![\w$])" + re.escape(var) + r"(?:\+|-|\*|/)?=(?!=)", b[j]):
+                            cand = j; break
+                if cand is None and a[i]:
+                    best = max(((difflib.SequenceMatcher(None, a[i], b[j]).ratio(), j) for j in range(j1, j2) if j not in used),
+                               default=(0, None))
+                    cand = best[1] if best[0] >= 0.75 else None
+                if cand is not None:
+                    used.add(cand); out[i + 1] = cand + 1
+    return out
+
+
+def attach_pair_lines(paths, lmap):
+    for p in paths:
+        for item in p["constraints"] + ([p["ret"]] if p["ret"] else []):
+            item["pair_line"] = lmap.get(item["line"])
 
 
 def parse_jpf_tests(text):
@@ -332,8 +376,10 @@ def region_analysis(z3, decls, old_sx, new_sx, inputs, max_pairs=900, per_query_
                             "witness": {k: v[k] for k in shown if k in v},
                             "ret_old": v.get("Ret__old"), "ret_new": v.get("Ret__new")})
     unknown = sum(1 for p in pairs if status.get(p) == "unknown")
+    errors = sorted(set(re.findall(r'\(error "([^"]*)"\)', out)))[:5]
     return {"n_old": len(olds), "n_new": len(news), "checked": len(pairs),
-            "truncated": len(olds) * len(news) > len(pairs), "unknown": unknown, "regions": regions}
+            "truncated": len(olds) * len(news) > len(pairs), "unknown": unknown, "regions": regions,
+            "z3_errors": errors, "no_answer": len(pairs) - len(status)}
 
 
 # ------------------------------------------------------------------ concrete execution
@@ -448,7 +494,7 @@ def analyze(run_dir, z3=None, jhome=None, use_z3=True, use_exec=True, params=Non
     reason = re.findall(r"Reason: (.*)", log)
     if verdict == "UNKNOWN" and reason:
         rep["reason"] = reason[-1].strip()
-    if verdict != "NOT EQUIVALENT":
+    if verdict not in ("NOT EQUIVALENT", "UNKNOWN"):
         return rep
 
     if params is None:
@@ -469,6 +515,8 @@ def analyze(run_dir, z3=None, jhome=None, use_z3=True, use_exec=True, params=Non
     new_src = read(os.path.join(last, "InewVARDiff.java")).splitlines()
     rep["old_paths"] = parse_jpf_paths(read(os.path.join(last, "IoldVARDiffJPFOutput.txt")), old_src)
     rep["new_paths"] = parse_jpf_paths(read(os.path.join(last, "InewVARDiffJPFOutput.txt")), new_src)
+    attach_pair_lines(rep["old_paths"], line_map(old_src, read(os.path.join(run_dir, "oldV.java")).splitlines()))
+    attach_pair_lines(rep["new_paths"], line_map(new_src, read(os.path.join(run_dir, "newV.java")).splitlines()))
     rep["uf_remaining"] = sorted(set(re.findall(r"\bUF_\w+?(?=\()", "\n".join(old_src + new_src))) - {"UF_"})
 
     summ = None
@@ -488,7 +536,9 @@ def analyze(run_dir, z3=None, jhome=None, use_z3=True, use_exec=True, params=Non
         if not aligned:
             rep["notes"].append("Z3 요약의 경로 수와 JPF 경로 수가 달라 경로 번호 대응이 정확하지 않을 수 있음")
         rep["regions"] = ra
-    elif use_z3:
+        if ra["z3_errors"]:
+            rep["notes"].append("z3 오류: " + " / ".join(ra["z3_errors"]))
+    elif use_z3 and verdict == "NOT EQUIVALENT":
         rep["notes"].append("z3 바이너리 또는 요약 수식을 찾지 못해 차이 영역 분석을 건너뜀")
 
     if use_exec:
@@ -505,8 +555,50 @@ def analyze(run_dir, z3=None, jhome=None, use_z3=True, use_exec=True, params=Non
         for name in ("IoldVARDiffJPFOutput.txt", "InewVARDiffJPFOutput.txt"):
             for t in parse_jpf_tests(read(os.path.join(last, name))):
                 add(t, "JPF 테스트 입력 (" + ("old" if "old" in name else "new") + ")")
-        rep["execution"] = run_concrete(run_dir, cands[:60], java_home(jhome))
+        _, m = target_method(os.path.join(run_dir, "oldV.java"), "oldV")
+        if m:
+            for t in sample_inputs(m.params, [c["inputs"] for c in cands]):
+                add(t, "경계값·무작위 입력")
+        ex = run_concrete(run_dir, cands[:400], java_home(jhome))
+        rep["execution"] = ex
+        if verdict == "UNKNOWN" and any(r["differs"] for r in ex.get("runs", [])):
+            rep["exec_verdict"] = "NOT EQUIVALENT"
+            rep["notes"].append("ARDiff는 판정하지 못했지만 실제 실행에서 결과가 다른 입력을 찾음")
     return rep
+
+
+def sample_inputs(params, seeds, limit=300, rng=None):
+    """Boundary values within ARDiff's default domain (-100..100) + neighbours of known inputs + random."""
+    rng = rng or random.Random(0)
+    ints = [-100, -51, -50, -11, -10, -2, -1, 0, 1, 2, 10, 11, 49, 50, 51, 99, 100]
+    reals = [-100.0, -10.5, -2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0, 10.5, 100.0]
+    doms = []
+    for t, n in params:
+        if t == "boolean":
+            dom = [False, True]
+        elif t in ("double", "float"):
+            dom = list(reals)
+        elif t in JAVA_PRIMS:
+            dom = list(ints)
+        else:
+            return []
+        for sd in seeds:
+            v = sd.get(n)
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                dom += [v - 1, v, v + 1] if t not in ("double", "float") else [v - 0.5, v, v + 0.5]
+        doms.append((n, sorted(set(dom), key=float) if t != "boolean" else dom))
+    combos = 1
+    for _, d in doms:
+        combos *= len(d)
+    names = [n for n, _ in doms]
+    if combos <= limit:
+        return [dict(zip(names, c)) for c in itertools.product(*[d for _, d in doms])]
+    out = [{n: 0 for n in names}]
+    for n, d in doms:                       # vary one parameter at a time around 0
+        out += [{**{m: 0 for m in names}, n: v} for v in d]
+    while len(out) < limit:
+        out.append({n: rng.choice(d) for n, d in doms})
+    return out[:limit]
 
 
 def to_markdown(rep, title=None):

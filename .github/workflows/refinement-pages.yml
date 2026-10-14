@@ -64,6 +64,14 @@ jobs:
           java-version: "8"
           java-package: jdk+fx
 
+      - name: Install difftastic (structural diff for the report)
+        continue-on-error: true      # the report falls back to a line diff without it
+        run: |
+          curl -fsSL https://github.com/Wilfred/difftastic/releases/download/0.71.0/difft-0.71.0-x86_64-unknown-linux-gnu.tar.gz \
+            | tar xz -C "$RUNNER_TEMP"
+          echo "DIFFT=$RUNNER_TEMP/difft" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/difft" --version | head -1
+
       - name: Use all runner cores
         run: echo "CORES=0-$(( $(nproc) - 1 ))" >> "$GITHUB_ENV"
 
@@ -117,8 +125,9 @@ jobs:
           # ARDiff inputs and logs per method, for anyone who wants the raw data
           if [ -d "$r/pairs" ]; then
             mkdir -p _site/pairs
-            (cd "$r/pairs" && find . \( -name 'oldV.java' -o -name 'newV.java' -o -name 'debug.log' -o -name 'meta.json' \) \
-               -not -path '*/iterations/*' -not -path '*/instrumented/*' -exec cp --parents {} "$GITHUB_WORKSPACE/_site/pairs/" \;)
+            (cd "$r/pairs" && find . \( -name 'oldV.java' -o -name 'newV.java' -o -name 'debug.log' -o -name 'meta.json' \
+               -o -name 'z3summary.txt' -o -name '*ToSolve.txt' -o -name '*JPFError.txt' -o -name '*JPFOutput.txt' -o -name 'I*VARDiff.java' \) \
+               -not -path '*/instrumented/*' -exec cp --parents {} "$GITHUB_WORKSPACE/_site/pairs/" \;)
           fi
 
       - uses: actions/upload-pages-artifact@v3

@@ -165,8 +165,13 @@ pairs/NNN_<Class.method>/   ARDiff 입력(oldV/newV.java)과 실행 결과 전�
    - **ARDiff 반례**: `z3summary.txt`의 Z3 모델 (입력값과 old 반환값). 추상화된 공통 코드(UF)가 남아 있으면 그 값에 기대는 반례라고 표시
    - **차이 영역**: old/new 요약 수식(`*ToSolve.txt`)을 경로별로 나눠, old 경로 i와 new 경로 j의 조건이 동시에 성립하면서 반환값이 다를 수 있는 쌍을 z3로 찾음.
      각 쌍마다 예시 입력과, JPF 출력의 경로 조건·반환식(소스 줄 포함)을 보여 줌
-   - **실제 실행 검증**: 원래 old/new 메서드를 컴파일해 반례, 차이 영역 예시, JPF가 만든 테스트 입력으로 직접 실행하고 결과가 다른 입력을 표로 보여 줌.
+   - **실제 실행 검증**: 원래 old/new 메서드를 컴파일해 반례, 차이 영역 예시, JPF가 만든 테스트 입력, 경계값·무작위 입력(최대 400개)으로 직접 실행하고 결과가 다른 입력을 표로 보여 줌.
      추상화 때문에 생긴 가짜 차이를 걸러 내는 단계
+
+5. **의미 차이 뷰** (`commitcheck/semview.py`): difftastic처럼 old/new를 나란히 놓고 바뀐 토큰을 강조합니다
+   (`difft`가 PATH나 `DIFFT`에 있으면 difftastic 구조 비교, 없으면 줄·토큰 단위 비교).
+   그 위에 결과가 달라지는 입력 목록을 두고, 입력을 고르면 각 버전이 지나는 조건 줄과 반환 줄, 반환값을 코드에 표시합니다.
+   ARDiff가 UNKNOWN이어도 실제 실행에서 결과가 다른 입력을 찾으면 "실행 결과 다름"으로 표시합니다
 
 ARDiff 실행 결과 하나만 분석하려면: `python3 commitcheck/semdiff.py bench/Ran/ran/NEq`
 
@@ -188,6 +193,7 @@ ARDiff 실행 결과 하나만 분석하려면: `python3 commitcheck/semdiff.py 
 | `commitcheck/commit_check.py` | 커밋 단위 EQ/NEQ 판정 (`commit` 명령) |
 | `commitcheck/semdiff.py` | ARDiff 결과 해석: NEQ의 의미 차이 분석 |
 | `commitcheck/javasrc.py` | 메서드 추출용 가벼운 Java 스캐너 |
+| `commitcheck/semview.py` | difftastic식 나란히 보기 + 의미 차이 표시 |
 | `scan.txt` | `scan` 결과 (`iteration 수\|판정\|경로`), git에서 제외 |
 
 GitHub Actions/Pages 연동은 repo 루트의 `SETUP.md`와 `.github/workflows/refinement-pages.yml`을 참고하세요.
