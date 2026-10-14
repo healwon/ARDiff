@@ -232,8 +232,8 @@ def build_pairs(files, out_dir, only=None, jhome=None, do_compile=True):
                 e.update(state="skipped", reason="추가된 메서드" if key not in olds else "삭제된 메서드")
                 entries.append(e); continue
             (mo, co), (mn, cn) = olds[key], news[key]
-            if mo.normalized() == mn.normalized():
-                continue                                    # unchanged
+            if re.sub(r"\s+", " ", mo.text).strip() == re.sub(r"\s+", " ", mn.text).strip():
+                continue                                    # unchanged (whitespace at most)
             e["old_lines"] = [mo.start_line, mo.end_line]
             e["new_lines"] = [mn.start_line, mn.end_line]
             e["diff"] = "".join(difflib.unified_diff(mo.text.splitlines(True), mn.text.splitlines(True),
