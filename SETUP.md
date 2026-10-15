@@ -28,7 +28,8 @@ repo의 **Settings → Pages → Build and deployment → Source**를 **GitHub A
 
 ## 3. 실행
 
-workflow 이름: **ARDiff commit check**. 커밋에서 바뀐 Java 메서드마다 ARDiff로 EQUIVALENT / NOT EQUIVALENT를 판정하고,
+workflow 이름: **ARDiff commit check**. 기본은 **벤치마크 모드**: push에서 바뀐 폴더 중 `oldV.java`와 `newV.java`가 있는 폴더마다
+oldV와 newV를 비교합니다. 수동 실행에서 `mode`를 `methods`로 고르면 커밋 이전/이후의 바뀐 메서드를 비교합니다. 커밋에서 바뀐 Java 메서드마다 ARDiff로 EQUIVALENT / NOT EQUIVALENT를 판정하고,
 NOT EQUIVALENT면 어떤 입력에서 결과가 달라지는지 보여 주는 보고서를 Pages에 올립니다.
 
 - **자동**: `.java` 파일이나 `refinement/`, workflow 파일이 바뀐 커밋을 main, master, docs에 push하면 실행.

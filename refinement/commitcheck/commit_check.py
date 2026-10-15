@@ -13,6 +13,10 @@ examples:
   commit_check.py --worktree                   # uncommitted changes vs HEAD
   commit_check.py --patch fix.diff --base HEAD
   commit_check.py --old A.java --new B.java    # two files, no git
+  commit_check.py --pairs                      # benchmark mode: for each folder touched by HEAD that holds
+                                               #   oldV.java + newV.java, compare oldV against newV (as of HEAD)
+  commit_check.py --pairs --range A..B         # same, folders touched in A..B
+  commit_check.py --pair-dir benchmarks/X/Eq   # benchmark mode on given folders (repeatable, no git needed)
   commit_check.py ... --no-run                 # only build pairs and report what would run
 
 output (default ./ardiff-commit-report/): report.html, report.md, report.json, viewer.html, pairs/
@@ -88,6 +92,110 @@ def versions_from_git(a):
                     "old": None if st == "A" else show(repo, base, old_p),
                     "new": None if st == "D" else get_new(new_p)})
     return label, out
+
+
+PAIR_FILES = ("oldV.java", "newV.java")
+
+
+def pairs_from_git(a):
+    """Benchmark mode: folders touched by the selected commit(s) that contain oldV.java and newV.java.
+    Returns [{"path": dir, "old": oldV text, "new": newV text}] as of the head side."""
+    label, files = versions_from_git(a)
+    repo = os.path.abspath(a.repo)
+    if a.range:
+        head = a.range.split("..", 1)[1] or "HEAD"
+        get = lambda p: show(repo, head, p)
+    elif a.staged:
+        get = lambda p: show(repo, "", p)
+    elif a.worktree:
+        get = lambda p: open(os.path.join(repo, p)).read() if os.path.exists(os.path.join(repo, p)) else None
+    else:
+        head = a.commit or "HEAD"
+        get = lambda p: show(repo, head, p)
+    dirs = sorted({os.path.dirname(f["path"]) for f in files if os.path.basename(f["path"]) in PAIR_FILES})
+    out = []
+    for d in dirs:
+        o, n = get(os.path.join(d, "oldV.java")), get(os.path.join(d, "newV.java"))
+        if o is not None and n is not None:
+            out.append({"path": d, "old": o, "new": n})
+    return label + " · oldV/newV 쌍", out
+
+
+def pairs_from_dirs(dirs):
+    out = []
+    for d in dirs:
+        o, n = os.path.join(d, "oldV.java"), os.path.join(d, "newV.java")
+        if not (os.path.exists(o) and os.path.exists(n)):
+            sys.exit(f"{d}: oldV.java / newV.java not found")
+        out.append({"path": d, "old": open(o).read(), "new": open(n).read()})
+    return "oldV/newV 쌍: " + ", ".join(dirs), out
+
+
+def set_package(src, pkg):
+    if re.search(r"^\s*package\s+[\w.]+\s*;", src, re.M):
+        return re.sub(r"^\s*package\s+[\w.]+\s*;", f"package {pkg};", src, count=1, flags=re.M)
+    return f"package {pkg};\n" + src
+
+
+def set_class(src, cls, name):
+    """ARDiff needs the two classes to be named differently: rename e.g. a copied `class newV` in oldV.java."""
+    if cls == name:
+        return src
+    return re.sub(r"(?<![\w$])" + re.escape(cls) + r"(?![\w$])", name, src)
+
+
+def first_method(src, cls_name):
+    classes = javasrc.parse(src)
+    for c in classes:
+        if c.name == cls_name and c.methods:
+            return c.methods[0]
+    for c in classes:
+        if c.methods:
+            return c.methods[0]
+    return None
+
+
+def build_pair_entries(pairs, out_dir, jhome=None, do_compile=True):
+    """Benchmark mode: ARDiff compares the first method of oldV with the first method of newV, files kept as-is
+    except for a per-pair package (parallel runs must not share <package>.instrumented classes)."""
+    pairs_dir = os.path.join(out_dir, "pairs")
+    shutil.rmtree(pairs_dir, ignore_errors=True)
+    os.makedirs(pairs_dir)
+    entries = []
+    for f in pairs:
+        try:
+            mo, mn = first_method(f["old"], "oldV"), first_method(f["new"], "newV")
+        except ValueError as ex:
+            entries.append({"file": f["path"], "method": "(oldV/newV)", "state": "skipped",
+                            "reason": f"Java 소스를 해석하지 못함: {ex}"})
+            continue
+        if not (mo and mn):
+            entries.append({"file": f["path"], "method": "(oldV/newV)", "state": "skipped", "reason": "메서드를 찾지 못함"})
+            continue
+        e = {"file": f["path"], "method": mo.signature, "old_text": f["old"], "new_text": f["new"], "pair_mode": True,
+             "params": [n for _, n in mo.params], "warnings": []}
+        if mo.signature != mn.signature or mo.ret.strip() != mn.ret.strip():
+            e.update(state="skipped", reason=f"oldV `{mo.ret} {mo.signature}`와 newV `{mn.ret} {mn.signature}`의 시그니처가 다름")
+            entries.append(e); continue
+        issues, warns = preflight(mo, mn, [], [])
+        e["warnings"] = warns
+        if issues:
+            e.update(state="skipped", reason="; ".join(issues)); entries.append(e); continue
+        e["diff"] = "".join(difflib.unified_diff(f["old"].splitlines(True), f["new"].splitlines(True), "oldV", "newV", n=3))
+        pkg = f"ardiffcc.p{len(entries):03d}"
+        d = os.path.join(pairs_dir, f"{len(entries):03d}_{slug(f['path'])}")
+        os.makedirs(d)
+        open(os.path.join(d, "oldV.java"), "w").write(set_package(set_class(f["old"], mo.cls, "oldV"), pkg))
+        open(os.path.join(d, "newV.java"), "w").write(set_package(set_class(f["new"], mn.cls, "newV"), pkg))
+        e["dir"] = d
+        err = compile_check(d, jhome) if do_compile else None
+        if err:
+            e.update(state="skipped", reason="oldV/newV가 컴파일되지 않음", compile_error=err[:2000])
+        else:
+            e["state"] = "ready"
+        json.dump(e, open(os.path.join(d, "meta.json"), "w"), ensure_ascii=False, indent=1)
+        entries.append(e)
+    return entries
 
 
 def versions_from_patch(a, work):
@@ -495,10 +603,13 @@ def main():
     src.add_argument("--patch", help="unified diff file, applied on --base")
     src.add_argument("--old", help="old .java file (use with --new)")
     ap.add_argument("--new")
+    ap.add_argument("--pairs", action="store_true",
+                    help="benchmark mode: compare oldV.java vs newV.java in each folder touched by the selected commit(s)")
+    ap.add_argument("--pair-dir", action="append", default=[], help="benchmark mode on this folder (repeatable)")
     ap.add_argument("--base", default="HEAD", help="base ref for --patch (default HEAD)")
     ap.add_argument("--repo", default=".")
     ap.add_argument("--out", default="ardiff-commit-report")
-    ap.add_argument("--only", help="regex on Class.method(sig) to limit methods")
+    ap.add_argument("--only", help="regex on Class.method(sig) to limit methods (folder path in --pairs mode)")
     ap.add_argument("--no-run", action="store_true", help="build pairs only, do not run ARDiff")
     ap.add_argument("--no-compile-check", action="store_true")
     ap.add_argument("--no-z3", action="store_true", help="skip difference-region analysis")
@@ -512,18 +623,25 @@ def main():
             os.environ[k.upper()] = str(getattr(a, k))
     out = os.path.abspath(a.out)
     os.makedirs(out, exist_ok=True)
-    if a.old:
-        if not a.new:
-            ap.error("--old needs --new")
-        label, files = versions_from_files(a)
-    elif a.patch:
-        label, files = versions_from_patch(a, out)
-    else:
-        label, files = versions_from_git(a)
-
     jhome = semdiff.java_home(a.java_home)
-    entries = build_pairs(files, out, a.only, jhome, not a.no_compile_check)
-    print(f"[commit-check] {label}: {len(entries)} changed method(s), "
+    if a.pair_dir or a.pairs:
+        if a.old or a.patch:
+            ap.error("--pairs/--pair-dir cannot be combined with --old or --patch")
+        label, pairs = pairs_from_dirs(a.pair_dir) if a.pair_dir else pairs_from_git(a)
+        if a.only:
+            pairs = [f for f in pairs if re.search(a.only, f["path"])]
+        entries = build_pair_entries(pairs, out, jhome, not a.no_compile_check)
+    else:
+        if a.old:
+            if not a.new:
+                ap.error("--old needs --new")
+            label, files = versions_from_files(a)
+        elif a.patch:
+            label, files = versions_from_patch(a, out)
+        else:
+            label, files = versions_from_git(a)
+        entries = build_pairs(files, out, a.only, jhome, not a.no_compile_check)
+    print(f"[commit-check] {label}: {len(entries)} {'pair' if (a.pairs or a.pair_dir) else 'changed method'}(s), "
           f"{sum(e['state'] == 'ready' for e in entries)} runnable", file=sys.stderr)
     if not a.no_run:
         run_ardiff(entries, a)
