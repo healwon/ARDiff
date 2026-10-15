@@ -134,6 +134,13 @@ def find_pair_dirs(root):
     return out
 
 
+def spread(items, n):
+    """n items evenly spaced over the (sorted) list, so different benchmark families are covered."""
+    if not n or n >= len(items):
+        return items
+    return [items[round(k * (len(items) - 1) / (n - 1))] for k in range(n)] if n > 1 else items[:1]
+
+
 def pairs_from_dirs(dirs):
     out = []
     for d in dirs:
@@ -585,7 +592,7 @@ def write_html(path, label, entries, viewer_ok):
     counts = summary_counts(entries)
     chips = "".join(f"<span class='chip {VCLASS.get(k, 'skip')}'>{h(k)} {v}</span>" for k, v in counts.items())
     cards = []
-    many = len(entries) > 10
+    many = len(entries) >= 8
     entries = sorted(entries, key=severity)
     rows = []
     for e in entries:
@@ -663,6 +670,8 @@ def main():
     ap.add_argument("--pair-dir", action="append", default=[], help="benchmark mode on this folder (repeatable)")
     ap.add_argument("--all-pairs", nargs="?", const="benchmarks", metavar="ROOT",
                     help="benchmark mode on every oldV/newV folder under ROOT (default: <repo>/benchmarks)")
+    ap.add_argument("--limit", type=int, default=0,
+                    help="with --all-pairs: check only N folders, evenly spread over the sorted list (0 = all)")
     ap.add_argument("--base", default="HEAD", help="base ref for --patch (default HEAD)")
     ap.add_argument("--repo", default=".")
     ap.add_argument("--out", default="ardiff-commit-report")
@@ -687,10 +696,13 @@ def main():
         if a.all_pairs:
             root = a.all_pairs if os.path.isabs(a.all_pairs) else os.path.join(os.path.abspath(a.repo), a.all_pairs)
             dirs = find_pair_dirs(root)
+            total = len(dirs)
+            dirs = spread(dirs, a.limit)
             label, pairs = pairs_from_dirs(dirs)
             for f in pairs:
                 f["path"] = os.path.relpath(f["path"], os.path.abspath(a.repo))
-            label = f"{os.path.relpath(root, os.path.abspath(a.repo))} 아래 oldV/newV 쌍 전체 ({len(pairs)}개)"
+            label = (f"{os.path.relpath(root, os.path.abspath(a.repo))} 아래 oldV/newV 쌍 "
+                     + (f"{len(pairs)}개 (전체 {total}개 중 고르게 선택)" if len(pairs) < total else f"전체 ({total}개)"))
         else:
             label, pairs = pairs_from_dirs(a.pair_dir) if a.pair_dir else pairs_from_git(a)
         if a.only:

@@ -29,11 +29,11 @@ repo의 **Settings → Pages → Build and deployment → Source**를 **GitHub A
 ## 3. 실행
 
 workflow 이름: **ARDiff commit check**. 기본은 **벤치마크 모드**: push할 때마다 `benchmarks/` 아래 `oldV.java`와 `newV.java`가 있는
-**모든** 폴더에서 oldV와 newV를 비교합니다. 수동 실행(Run workflow)의 `mode`도 기본이 `all`입니다 (142개 쌍, 러너에서 수 시간 걸릴 수 있음, 쌍당 제한 300초). `pairs`는 커밋에서 바뀐 폴더만, `methods`는 커밋 이전/이후의 바뀐 메서드를 비교합니다. 커밋에서 바뀐 Java 메서드마다 ARDiff로 EQUIVALENT / NOT EQUIVALENT를 판정하고,
+폴더 142개 중 **10개**를 목록 전체에 고르게 골라 oldV와 newV를 비교합니다 (매번 같은 10개). 수동 실행(Run workflow)의 `mode`도 기본이 `all`이고, `limit`으로 개수를 정합니다 (기본 10, `0`이면 142개 전부: 수 시간 걸릴 수 있음, 쌍당 제한 300초). `pairs`는 커밋에서 바뀐 폴더만, `methods`는 커밋 이전/이후의 바뀐 메서드를 비교합니다. 커밋에서 바뀐 Java 메서드마다 ARDiff로 EQUIVALENT / NOT EQUIVALENT를 판정하고,
 NOT EQUIVALENT면 어떤 입력에서 결과가 달라지는지 보여 주는 보고서를 Pages에 올립니다.
 
 - **자동**: `.java` 파일이나 `refinement/`, workflow 파일이 바뀐 커밋을 main, master, docs에 push하면 실행.
-  `benchmarks/` 아래 모든 oldV/newV 쌍을 검사 (methods/pairs 모드를 수동으로 고르면 그 push의 커밋 범위 `before..after` 기준). docs에서 배포하려면 **Settings → Environments → github-pages → Deployment branches and tags**에 `docs` 추가
+  `benchmarks/` 아래 oldV/newV 쌍 10개를 검사 (methods/pairs 모드를 수동으로 고르면 그 push의 커밋 범위 `before..after` 기준). docs에서 배포하려면 **Settings → Environments → github-pages → Deployment branches and tags**에 `docs` 추가
 - **수동**: **Actions → ARDiff commit check → Run workflow**
   - `target_repo`: 검사할 다른 저장소의 git URL (public). 비우면 이 저장소
   - `commit`: 검사할 커밋 (부모 커밋과 비교, 기본 HEAD)

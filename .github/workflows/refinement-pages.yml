@@ -1,5 +1,6 @@
 # Runs ARDiff on what a push changed (EQUIVALENT / NOT EQUIVALENT + semantic difference):
-#   all mode (default, also on push): every oldV/newV folder under benchmarks/ -> oldV vs newV
+#   all mode (default, also on push): oldV/newV folders under benchmarks/ -> oldV vs newV
+#     (10 folders spread over the list by default; limit 0 = all)
 #   pairs mode: only folders touched by the commit(s)
 #   methods mode: each changed method, old commit vs new commit
 # and publishes the report to GitHub Pages: index.html = report, viewers/<pair>.html = refinement process.
@@ -25,6 +26,10 @@ on:
         type: choice
         options: [all, pairs, methods]
         default: all
+      limit:
+        description: "all mode: how many folders to check, evenly spread (0 = all 142)"
+        required: false
+        default: "10"
       only:
         description: "Regex to limit what is checked (folder path in pairs mode, Class.method(sig) in methods mode)"
         required: false
@@ -57,7 +62,8 @@ jobs:
       COMMIT: ${{ inputs.commit }}
       RANGE: ${{ inputs.range }}
       ONLY: ${{ inputs.only }}
-      MODE: ${{ inputs.mode || 'all' }}          # push: every oldV/newV folder too
+      MODE: ${{ inputs.mode || 'all' }}          # push: all mode too
+      LIMIT: ${{ inputs.limit || '10' }}          # push: 10 folders
       EVENT: ${{ github.event_name }}
       PUSH_BEFORE: ${{ github.event.before }}
       PUSH_AFTER: ${{ github.sha }}
@@ -116,7 +122,7 @@ jobs:
           args=(--repo "$CHECK_REPO" --out "$RUNNER_TEMP/report")
           case "$MODE" in
             pairs) args+=(--pairs) ;;
-            all)   args+=(--all-pairs) ;;
+            all)   args+=(--all-pairs --limit "$LIMIT") ;;
           esac
           [ -n "$ONLY" ] && args+=(--only "$ONLY")
           # CHECK_SEL is "--range X" or "--commit X": word-split on purpose
