@@ -1,7 +1,8 @@
 # Runs ARDiff on what a push changed (EQUIVALENT / NOT EQUIVALENT + semantic difference):
-#   pairs mode (default): every folder touched by the push that holds oldV.java + newV.java -> oldV vs newV
+#   all mode (default, also on push): every oldV/newV folder under benchmarks/ -> oldV vs newV
+#   pairs mode: only folders touched by the commit(s)
 #   methods mode: each changed method, old commit vs new commit
-# and publishes the report to GitHub Pages: index.html = commit report, viewer.html = refinement process.
+# and publishes the report to GitHub Pages: index.html = report, viewers/<pair>.html = refinement process.
 name: ARDiff commit check
 
 on:
@@ -20,10 +21,10 @@ on:
         required: false
         default: ""
       mode:
-        description: "pairs = compare oldV.java vs newV.java in each touched folder; methods = compare changed methods across commits"
+        description: "all = every oldV/newV folder under benchmarks/; pairs = only folders touched by the commit(s); methods = changed methods across commits"
         type: choice
-        options: [pairs, methods]
-        default: pairs
+        options: [all, pairs, methods]
+        default: all
       only:
         description: "Regex to limit what is checked (folder path in pairs mode, Class.method(sig) in methods mode)"
         required: false
@@ -42,21 +43,21 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: false
+  cancel-in-progress: true      # a full run takes long: a newer push replaces the running one
 
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 340          # "all" runs ~140 pairs
     env:
       JOBS: "2"
       HEAP: "5G"
-      TIMEOUT: "600"
+      TIMEOUT: ${{ (inputs.mode || 'all') == 'all' && '300' || '600' }}   # per pair, seconds
       TARGET_REPO: ${{ inputs.target_repo }}
       COMMIT: ${{ inputs.commit }}
       RANGE: ${{ inputs.range }}
       ONLY: ${{ inputs.only }}
-      MODE: ${{ inputs.mode || 'pairs' }}
+      MODE: ${{ inputs.mode || 'all' }}          # push: every oldV/newV folder too
       EVENT: ${{ github.event_name }}
       PUSH_BEFORE: ${{ github.event.before }}
       PUSH_AFTER: ${{ github.sha }}
@@ -113,7 +114,10 @@ jobs:
       - name: Run commit check
         run: |
           args=(--repo "$CHECK_REPO" --out "$RUNNER_TEMP/report")
-          [ "$MODE" = pairs ] && args+=(--pairs)
+          case "$MODE" in
+            pairs) args+=(--pairs) ;;
+            all)   args+=(--all-pairs) ;;
+          esac
           [ -n "$ONLY" ] && args+=(--only "$ONLY")
           # CHECK_SEL is "--range X" or "--commit X": word-split on purpose
           set +e
@@ -130,7 +134,7 @@ jobs:
           mkdir -p _site
           cp "$r/report.html" _site/index.html
           cp "$r/report.md" "$r/report.json" _site/
-          [ -f "$r/viewer.html" ] && cp "$r/viewer.html" _site/
+          [ -d "$r/viewers" ] && cp -r "$r/viewers" _site/
           # ARDiff inputs and logs per method, for anyone who wants the raw data
           if [ -d "$r/pairs" ]; then
             mkdir -p _site/pairs

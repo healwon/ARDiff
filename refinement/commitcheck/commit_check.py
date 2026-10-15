@@ -17,9 +17,10 @@ examples:
                                                #   oldV.java + newV.java, compare oldV against newV (as of HEAD)
   commit_check.py --pairs --range A..B         # same, folders touched in A..B
   commit_check.py --pair-dir benchmarks/X/Eq   # benchmark mode on given folders (repeatable, no git needed)
+  commit_check.py --all-pairs                  # benchmark mode on every oldV/newV folder under benchmarks/
   commit_check.py ... --no-run                 # only build pairs and report what would run
 
-output (default ./ardiff-commit-report/): report.html, report.md, report.json, viewer.html, pairs/
+output (default ./ardiff-commit-report/): report.html, report.md, report.json, viewers/<pair>.html, pairs/
 """
 import argparse, difflib, html, json, os, re, shutil, subprocess, sys
 
@@ -121,6 +122,16 @@ def pairs_from_git(a):
         if o is not None and n is not None:
             out.append({"path": d, "old": o, "new": n})
     return label + " · oldV/newV 쌍", out
+
+
+def find_pair_dirs(root):
+    """Every folder under root holding oldV.java + newV.java (ARDiff output folders excluded)."""
+    out = []
+    for d, subdirs, files in os.walk(root):
+        subdirs[:] = sorted(x for x in subdirs if x not in ARDIFF_OUTPUT_DIRS and not x.startswith("."))
+        if "oldV.java" in files and "newV.java" in files:
+            out.append(d)
+    return out
 
 
 def pairs_from_dirs(dirs):
@@ -438,6 +449,9 @@ def write_markdown(path, label, entries):
             res += " (실행 결과는 다름)"
         if e["state"] == "skipped":
             res = f"건너뜀: {e['reason']}"
+        exp = expected_verdict(e["file"])
+        if exp and e.get("verdict") in ("EQUIVALENT", "NOT EQUIVALENT"):
+            res += " ✓" if e["verdict"] == exp else f" ✗ (기대: {exp})"
         L.append(f"| `{e['method']}` | {e['file']} | {res} |")
     for e in entries:
         if e.get("analysis") and (e["verdict"] == "NOT EQUIVALENT" or e.get("exec_verdict")):
@@ -535,15 +549,45 @@ table.plain{border-collapse:collapse;font-size:13px}.plain td,.plain th{border-b
 .pp{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}@media(max-width:760px){.pp{grid-template-columns:minmax(0,1fr)}}
 .path ul{margin:4px 0;padding-left:16px}.path li{margin:2px 0}.ptitle{font-size:12px;color:var(--muted)}
 .expr{font-family:var(--mono);font-size:11.5px;color:var(--muted);word-break:break-all}.ln{font-family:var(--mono);font-size:11px;color:var(--muted)}
-.ret{font-size:12.5px;word-break:break-all}a{color:inherit}
+.ret{font-size:12.5px;word-break:break-all}a{color:inherit}[hidden]{display:none!important}
+.filters{display:flex;flex-wrap:wrap;gap:6px}.filters button{font:inherit;font-size:12px;color:var(--fg);background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:2px 9px;cursor:pointer}
+.filters button[aria-pressed="true"]{border-color:var(--fg);font-weight:600}
 """
+
+
+def expected_verdict(path):
+    """Benchmark folders encode the answer: .../Eq/... or .../NEq/..."""
+    parts = path.replace("\\", "/").split("/")
+    if "NEq" in parts:
+        return "NOT EQUIVALENT"
+    if "Eq" in parts:
+        return "EQUIVALENT"
+    return None
+
+
+def severity(e):
+    v = e.get("verdict") if e["state"] == "done" else e["state"]
+    order = 0 if v == "NOT EQUIVALENT" else 1 if e.get("exec_verdict") else 2 if v == "UNKNOWN" else 4 if v == "EQUIVALENT" else 3
+    return order
+
+
+def summary_table(rows):
+    return f"""<section class="card"><div class="head"><h3 style="font-family:var(--sans)">요약</h3>
+<span class="filters"><button type="button" data-f="">전체</button><button type="button" data-f="neq">NOT EQUIVALENT</button>
+<button type="button" data-f="unk">UNKNOWN</button><button type="button" data-f="eq">EQUIVALENT</button><button type="button" data-f="skip">건너뜀</button></span></div>
+<div class="scroll" style="max-height:60vh;overflow:auto"><table class="plain" id="sum"><tr><th>폴더/파일</th><th>메서드</th><th>결과</th><th>기대 (폴더 이름)</th><th></th><th>iteration</th></tr>{"".join(rows)}</table></div></section>
+<script>document.querySelectorAll(".filters button").forEach(function(b){{b.addEventListener("click",function(){{
+var f=b.dataset.f;document.querySelectorAll(".filters button").forEach(function(x){{x.setAttribute("aria-pressed",x===b?"true":"false");}});
+document.querySelectorAll("#sum tr[data-v], section.card[data-v]").forEach(function(r){{r.hidden=!!f&&r.dataset.v!==f&&!(f==="neq"&&r.classList.contains("neq"));}});}});}});</script>"""
 
 
 def write_html(path, label, entries, viewer_ok):
     counts = summary_counts(entries)
     chips = "".join(f"<span class='chip {VCLASS.get(k, 'skip')}'>{h(k)} {v}</span>" for k, v in counts.items())
     cards = []
-    viewer_names = [os.path.basename(e["dir"]) for e in entries if e.get("analysis") and e["analysis"].get("iterations")]
+    many = len(entries) > 10
+    entries = sorted(entries, key=severity)
+    rows = []
     for e in entries:
         v = e.get("verdict") if e["state"] == "done" else {"skipped": "SKIPPED", "not-run": "NOT RUN"}.get(e["state"], e["state"])
         vc = VCLASS.get(v, "skip")
@@ -551,8 +595,8 @@ def write_html(path, label, entries, viewer_ok):
         meta = []
         if rep.get("iterations"):
             meta.append(f"refinement iteration {rep['iterations']}")
-            if viewer_ok and os.path.basename(e["dir"]) in viewer_names:
-                meta.append(f"<a href='viewer.html#b{viewer_names.index(os.path.basename(e['dir']))}'>refinement 과정 보기</a>")
+            if e.get("viewer"):
+                meta.append(f"<a href='{h(e['viewer'])}'>refinement 과정 보기</a>")
         if e.get("reason"):
             meta.append(h(e["reason"]))
         if e.get("note"):
@@ -579,8 +623,16 @@ def write_html(path, label, entries, viewer_ok):
         elif v == "UNKNOWN" and rep.get("execution", {}).get("runs"):
             body += f"<p class='muted'>실제 실행: 입력 {len(rep['execution']['runs'])}개에서 old/new 결과가 모두 같았음 (동등하다는 증명은 아님)</p>"
         extra = "<span class='chip neq'>실행 결과 다름</span>" if e.get("exec_verdict") else ""
-        cards.append(f"<section class='card {vc}{' neq' if e.get('exec_verdict') else ''}'><div class='head'><h3>{h(e['method'])}</h3><span>{extra} <span class='chip {vc}'>{h(v)}</span></span></div>"
+        if many and not (v == "NOT EQUIVALENT" or e.get("exec_verdict")) and body:
+            body = f"<details><summary class='muted'>코드 보기</summary>{body}</details>"
+        cid = f"c{len(cards)}"
+        cards.append(f"<section class='card {vc}{' neq' if e.get('exec_verdict') else ''}' id='{cid}' data-v='{vc}'><div class='head'><h3>{h(e['method'])}</h3><span>{extra} <span class='chip {vc}'>{h(v)}</span></span></div>"
                      f"<div class='muted'>{h(e['file'])}{' · ' if meta else ''}{' · '.join(meta)}</div>{body}</section>")
+        it = (e.get("analysis") or {}).get("iterations")
+        exp = expected_verdict(e["file"])
+        match = "" if not exp or v not in ("EQUIVALENT", "NOT EQUIVALENT") else ("<span class='eq'>일치</span>" if exp == v else "<span class='neq'>불일치</span>")
+        rows.append(f"<tr data-v='{vc}'{' class=neq' if e.get('exec_verdict') else ''}><td><a href='#{cid}'>{h(e['file'])}</a></td><td class='mono'>{h(e['method'])}</td>"
+                    f"<td><span class='chip {vc}'>{h(v)}</span> {extra}</td><td class='mono'>{h(exp or '')}</td><td>{match}</td><td class='mono'>{it or ''}</td></tr>")
     page = f"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -590,6 +642,7 @@ def write_html(path, label, entries, viewer_ok):
 <div class="wrap">
 <header><h1>ARDiff Commit Check</h1><div class="muted">{h(label)}</div></header>
 <div class="counts">{chips or "<span class='muted'>바뀐 메서드 없음</span>"}</div>
+{summary_table(rows) if many else ""}
 {''.join(cards)}
 </div>"""
     open(path, "w").write(page)
@@ -608,6 +661,8 @@ def main():
     ap.add_argument("--pairs", action="store_true",
                     help="benchmark mode: compare oldV.java vs newV.java in each folder touched by the selected commit(s)")
     ap.add_argument("--pair-dir", action="append", default=[], help="benchmark mode on this folder (repeatable)")
+    ap.add_argument("--all-pairs", nargs="?", const="benchmarks", metavar="ROOT",
+                    help="benchmark mode on every oldV/newV folder under ROOT (default: <repo>/benchmarks)")
     ap.add_argument("--base", default="HEAD", help="base ref for --patch (default HEAD)")
     ap.add_argument("--repo", default=".")
     ap.add_argument("--out", default="ardiff-commit-report")
@@ -626,10 +681,18 @@ def main():
     out = os.path.abspath(a.out)
     os.makedirs(out, exist_ok=True)
     jhome = semdiff.java_home(a.java_home)
-    if a.pair_dir or a.pairs:
+    if a.pair_dir or a.pairs or a.all_pairs:
         if a.old or a.patch:
-            ap.error("--pairs/--pair-dir cannot be combined with --old or --patch")
-        label, pairs = pairs_from_dirs(a.pair_dir) if a.pair_dir else pairs_from_git(a)
+            ap.error("--pairs/--pair-dir/--all-pairs cannot be combined with --old or --patch")
+        if a.all_pairs:
+            root = a.all_pairs if os.path.isabs(a.all_pairs) else os.path.join(os.path.abspath(a.repo), a.all_pairs)
+            dirs = find_pair_dirs(root)
+            label, pairs = pairs_from_dirs(dirs)
+            for f in pairs:
+                f["path"] = os.path.relpath(f["path"], os.path.abspath(a.repo))
+            label = f"{os.path.relpath(root, os.path.abspath(a.repo))} 아래 oldV/newV 쌍 전체 ({len(pairs)}개)"
+        else:
+            label, pairs = pairs_from_dirs(a.pair_dir) if a.pair_dir else pairs_from_git(a)
         if a.only:
             pairs = [f for f in pairs if re.search(a.only, f["path"])]
         entries = build_pair_entries(pairs, out, jhome, not a.no_compile_check)
@@ -643,18 +706,24 @@ def main():
         else:
             label, files = versions_from_git(a)
         entries = build_pairs(files, out, a.only, jhome, not a.no_compile_check)
-    print(f"[commit-check] {label}: {len(entries)} {'pair' if (a.pairs or a.pair_dir) else 'changed method'}(s), "
+    print(f"[commit-check] {label}: {len(entries)} {'pair' if (a.pairs or a.pair_dir or a.all_pairs) else 'changed method'}(s), "
           f"{sum(e['state'] == 'ready' for e in entries)} runnable", file=sys.stderr)
     if not a.no_run:
         run_ardiff(entries, a)
     analyze(entries, a, jhome)
 
-    run_dirs = [e["dir"] for e in entries if e.get("analysis", {}).get("iterations")]
-    viewer_ok = False
-    if run_dirs:
-        p = subprocess.run([sys.executable, os.path.join(REFINEMENT, "build_viewer.py"), os.path.join(out, "viewer.html"), *run_dirs],
-                           capture_output=True, text=True)
-        viewer_ok = p.returncode == 0
+    # one refinement viewer per pair: a single page with every run would grow to tens of MB
+    vdir = os.path.join(out, "viewers")
+    shutil.rmtree(vdir, ignore_errors=True)
+    for e in entries:
+        if e.get("analysis", {}).get("iterations"):
+            os.makedirs(vdir, exist_ok=True)
+            target = os.path.join(vdir, os.path.basename(e["dir"]) + ".html")
+            p = subprocess.run([sys.executable, os.path.join(REFINEMENT, "build_viewer.py"), target, e["dir"]],
+                               capture_output=True, text=True)
+            if p.returncode == 0:
+                e["viewer"] = os.path.relpath(target, out)
+    viewer_ok = True
     json.dump({"label": label, "entries": entries}, open(os.path.join(out, "report.json"), "w"),
               ensure_ascii=False, indent=1, default=str)
     write_markdown(os.path.join(out, "report.md"), label, entries)

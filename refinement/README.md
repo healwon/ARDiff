@@ -138,11 +138,14 @@ NOT EQUIVALENT면 ARDiff 로그로 **어떤 입력에서 어떻게 달라지는�
 **벤치마크 모드** (`--pairs`, `--pair-dir`): 커밋 사이를 비교하지 않고, 커밋에서 바뀐 폴더 중 `oldV.java`와 `newV.java`가 함께 있는 폴더마다
 그 시점의 **oldV vs newV**를 ARDiff로 비교합니다 (ARDiff 기본 규칙대로 각 파일의 첫 번째 메서드가 대상).
 파일은 그대로 쓰고 패키지만 쌍마다 따로 붙이며, 클래스 이름이 `oldV`/`newV`가 아니면 맞춰 바꿉니다.
+쌍이 많으면(10개 초과) 보고서 맨 위에 결과별 필터가 있는 요약 표가 나오고, 폴더 이름의 `Eq`/`NEq`를 정답으로 보고 일치 여부를 표시합니다.
+refinement 뷰어는 쌍마다 `viewers/<쌍>.html`로 따로 만듭니다.
 
 ```bash
 ./ardiff-workflow.sh commit --pairs                          # HEAD에서 바뀐 폴더
 ./ardiff-workflow.sh commit --pairs --range main..docs
 ./ardiff-workflow.sh commit --pair-dir ../benchmarks/Bess/bessj0/Eq   # 폴더 직접 지정 (git 불필요)
+./ardiff-workflow.sh commit --repo .. --all-pairs              # benchmarks/ 아래 모든 oldV/newV 쌍 (142개)
 ```
 
 | 옵션 | 설명 |
