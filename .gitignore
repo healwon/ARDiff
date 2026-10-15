@@ -1,1 +1,9 @@
 .DS_Store
+
+# ARDiff run outputs written next to the input pair
+benchmarks/**/instrumented/
+benchmarks/**/outputs/
+benchmarks/**/z3models/
+benchmarks/**/iterations/
+benchmarks/**/debug.log
+benchmarks/**/scan.log

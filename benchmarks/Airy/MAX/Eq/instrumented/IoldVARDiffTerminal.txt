@@ -1,5 +1,0 @@
-The summary for the old method (in z3 stmt2 format)
-(define-fun exp ((x Real)) Real (^ 2.718281828459045 x)) 
-(define-fun sqrt ((x Real)) Real (^ 0.5 x)) 
-(declare-fun log (Real) Real) 
- (assert ( or ( or ( and ( < b a ) ( = Ret a )) ( and ( = a b ) ( = Ret a ) )) ( and ( > b a ) ( = Ret b ) ) ))

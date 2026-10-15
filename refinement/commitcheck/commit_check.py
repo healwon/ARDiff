@@ -95,6 +95,7 @@ def versions_from_git(a):
 
 
 PAIR_FILES = ("oldV.java", "newV.java")
+ARDIFF_OUTPUT_DIRS = {"instrumented", "iterations", "outputs", "z3models"}   # ARDiff writes copies of the pair here
 
 
 def pairs_from_git(a):
@@ -112,7 +113,8 @@ def pairs_from_git(a):
     else:
         head = a.commit or "HEAD"
         get = lambda p: show(repo, head, p)
-    dirs = sorted({os.path.dirname(f["path"]) for f in files if os.path.basename(f["path"]) in PAIR_FILES})
+    dirs = sorted({os.path.dirname(f["path"]) for f in files if os.path.basename(f["path"]) in PAIR_FILES
+                   and not ARDIFF_OUTPUT_DIRS & set(f["path"].split("/")[:-1])})
     out = []
     for d in dirs:
         o, n = get(os.path.join(d, "oldV.java")), get(os.path.join(d, "newV.java"))
