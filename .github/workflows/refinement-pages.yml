@@ -56,7 +56,8 @@ jobs:
     timeout-minutes: 340          # "all" runs ~140 pairs
     env:
       JOBS: "2"
-      HEAP: "5G"
+      HEAP: "4G"          # 2 jobs x (4G ARDiff + 3G JPF child) stays under the runner's 16 GB
+      JPF_HEAP: "3g"
       TIMEOUT: ${{ (inputs.mode || 'all') == 'all' && '300' || '600' }}   # per pair, seconds
       TARGET_REPO: ${{ inputs.target_repo }}
       COMMIT: ${{ inputs.commit }}
@@ -146,7 +147,7 @@ jobs:
             mkdir -p _site/pairs
             (cd "$r/pairs" && find . \( -name 'oldV.java' -o -name 'newV.java' -o -name 'debug.log' -o -name 'meta.json' \
                -o -name 'z3summary.txt' -o -name '*ToSolve.txt' -o -name '*JPFError.txt' -o -name '*JPFOutput.txt' -o -name 'I*VARDiff.java' \) \
-               -not -path '*/instrumented/*' -exec cp --parents {} "$GITHUB_WORKSPACE/_site/pairs/" \;)
+               -not -path '*/instrumented/*' -size -6M -exec cp --parents {} "$GITHUB_WORKSPACE/_site/pairs/" \;)
           fi
 
       - uses: actions/upload-pages-artifact@v3

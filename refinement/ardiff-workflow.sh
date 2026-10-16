@@ -12,7 +12,8 @@
 #
 # bench names are relative to $WORK/bench, e.g. Ran/ran/NEq.  "--top N" picks the N with most iterations from scan.txt.
 # "examples" = every pair under $EXAMPLES_DIR (copied to bench/examples/). No bench args = defaults + examples.
-# env: ARDIFF_REPO, WORK, EXAMPLES_DIR, ARDIFF_JAVA_HOME, CORES (taskset list), JOBS, TIMEOUT (s), HEAP, TOOL_ARGS, OUT_HTML
+# env: ARDIFF_REPO, WORK, EXAMPLES_DIR, ARDIFF_JAVA_HOME, CORES (taskset list), JOBS, TIMEOUT (s), HEAP, JPF_HEAP,
+#      OUTPUT_CAP_MB, TOOL_ARGS, OUT_HTML
 set -euo pipefail
 
 WORK=${WORK:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}
@@ -24,6 +25,8 @@ CORES=${CORES:-120-159}
 JOBS=${JOBS:-4}
 TIMEOUT=${TIMEOUT:-300}
 HEAP=${HEAP:-8G}
+JPF_HEAP=${JPF_HEAP:-3g}      # max heap of the JPF JVM that ARDiff starts (it passes no -Xmx itself)
+OUTPUT_CAP_MB=${OUTPUT_CAP_MB:-5}  # bigger ARDiff text outputs are cut to head 4/5 + tail 1/5
 TOOL_ARGS=${TOOL_ARGS:---tool A --H H123}
 OUT_HTML=${OUT_HTML:-$WORK/refinement-viewer.html}
 JDK_ROOT=$HOME/.local/jdk8
@@ -153,7 +156,23 @@ helper = '''
         for (File f : files) {
             File t = new File(dst, f.getName());
             if (f.isDirectory()) copyDir(f, t);
+            else if (f.length() > SNAP_CAP) copyCapped(f, t);
             else java.nio.file.Files.copy(f.toPath(), t.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    /** [debug patch] JPF output can reach hundreds of MB; keep the first 4MB and the last 1MB of a big file */
+    private static final long SNAP_CAP = 5L << 20;
+    private static void copyCapped(File src, File dst) throws IOException {
+        long head = 4L << 20, tail = 1L << 20, len = src.length();
+        try (java.io.RandomAccessFile in = new java.io.RandomAccessFile(src, "r");
+             java.io.FileOutputStream out = new java.io.FileOutputStream(dst)) {
+            byte[] buf = new byte[1 << 16];
+            long left = head; int n;
+            while (left > 0 && (n = in.read(buf, 0, (int) Math.min(buf.length, left))) > 0) { out.write(buf, 0, n); left -= n; }
+            out.write(("\\n... [" + (len - head - tail) + " bytes cut by ardiff-workflow] ...\\n").getBytes());
+            in.seek(len - tail);
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
         }
     }
 '''
@@ -193,15 +212,27 @@ cmd_setup() {
 }
 
 # ---------------------------------------------------------------- run
+cap_outputs() {  # cut ARDiff text outputs above OUTPUT_CAP_MB (JPF output alone can be hundreds of MB)
+  local cap=$((OUTPUT_CAP_MB * 1024 * 1024)) f
+  [ -d "$1" ] || return 0
+  find "$1" -type f -name '*.txt' -size +"${OUTPUT_CAP_MB}"M | while read -r f; do
+    local size; size=$(stat -c %s "$f")
+    { head -c $((cap * 4 / 5)) "$f"; printf '\n... [%s bytes cut by ardiff-workflow] ...\n' $((size - cap)); tail -c $((cap / 5)) "$f"; } > "$f.cut"
+    mv "$f.cut" "$f"
+  done
+}
+
 run_one() {  # bench name relative to $WORK/bench, or an absolute dir; prints "name|iterations|verdict"
   load_env
   local d="$WORK/bench/$1"
   case "$1" in /*) d=$1 ;; esac
   [ -f "$d/oldV.java" ] || die "no oldV.java in $d"
   rm -rf "$d/instrumented" "$d/outputs" "$d/z3models" "$d/iterations"
-  (cd "$IMPL" && timeout "$TIMEOUT" taskset -c "$CORES" java -Djava.library.path=jpf-git/jpf-symbc/lib -Xmx"$HEAP" \
+  # JAVA_TOOL_OPTIONS reaches the JPF child JVM; the explicit -Xmx on our own command line still wins for the main JVM
+  (cd "$IMPL" && JAVA_TOOL_OPTIONS="-Xmx$JPF_HEAP" timeout "$TIMEOUT" taskset -c "$CORES" java -Djava.library.path=jpf-git/jpf-symbc/lib -Xmx"$HEAP" \
       -cp "$WORK/classes:target/artifacts/Implementation_jar/*" Runner.Runner \
       --path1 "$d/oldV.java" --path2 "$d/newV.java" $TOOL_ARGS > "$d/debug.log" 2>&1) || true
+  cap_outputs "$d/instrumented"
   local n v
   n=0; [ -d "$d/iterations" ] && n=$(ls "$d/iterations" | wc -l)
   v=$(grep -o "Output : [A-Z ]*" "$d/debug.log" 2>/dev/null | tail -1 | sed 's/Output : //; s/ *$//' || true)

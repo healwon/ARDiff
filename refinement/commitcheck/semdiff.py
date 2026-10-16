@@ -484,6 +484,74 @@ public class ArdiffHarness {{
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def run_traces(run_dir, inputs_list, jhome, timeout=120):
+    """Executed source lines (in order) of oldV/newV for each input, via LineTracer (JDI single-stepping).
+    -> list aligned with inputs_list of {"old": {"lines", "ret", "truncated"}, "new": {...}}, or {"error": ..}."""
+    old_p, new_p = os.path.join(run_dir, "oldV.java"), os.path.join(run_dir, "newV.java")
+    old_fqn, m = target_method(old_p, "oldV")
+    new_fqn, _ = target_method(new_p, "newV")
+    tools = os.path.join(jhome or "", "lib", "tools.jar")
+    if not (m and new_fqn and jhome and os.path.exists(tools)):
+        return {"error": "JDK 8 tools.jar 또는 메서드를 찾지 못해 실행 흐름을 기록하지 못함"}
+    if any(t not in JAVA_PRIMS for t, _ in m.params):
+        return {"error": "원시 타입 파라미터가 아니어서 실행 흐름을 기록하지 못함"}
+    calls = []
+    for inp in inputs_list:
+        lits = [java_literal(t, inp.get(n)) for t, n in m.params]
+        calls.append("null" if any(l is None for l in lits) else "new Object[]{" + ", ".join(lits) + "}")
+    types = ", ".join(f"{t}.class" for t, _ in m.params)
+    main_src = f"""import java.lang.reflect.*;
+public class ArdiffTraceMain {{
+  public static void main(String[] a) throws Exception {{
+    Class<?> c = Class.forName(a[0].equals("old") ? "{old_fqn}" : "{new_fqn}");
+    Method m = c.getDeclaredMethod("{m.name}", new Class<?>[]{{{types}}});
+    m.setAccessible(true);
+    Object recv = null;
+    if (!Modifier.isStatic(m.getModifiers())) {{ Constructor<?> k = c.getDeclaredConstructor(); k.setAccessible(true); recv = k.newInstance(); }}
+    Object[][] inputs = new Object[][]{{{", ".join(calls)}}};
+    for (Object[] in : inputs) {{
+      if (in == null) continue;
+      try {{ m.invoke(recv, in); }} catch (Throwable t) {{ }}
+    }}
+  }}
+}}
+"""
+    tmp = tempfile.mkdtemp(prefix="ardiff-trace-")
+    try:
+        javac, java = os.path.join(jhome, "bin", "javac"), os.path.join(jhome, "bin", "java")
+        tgt, trc = os.path.join(tmp, "target"), os.path.join(tmp, "tracer")
+        os.makedirs(tgt); os.makedirs(trc)
+        open(os.path.join(tmp, "ArdiffTraceMain.java"), "w").write(main_src)
+        p = subprocess.run(pinned([javac, "-g", "-nowarn", "-d", tgt, old_p, new_p, os.path.join(tmp, "ArdiffTraceMain.java")]),
+                           capture_output=True, text=True, timeout=120)
+        if p.returncode:
+            return {"error": "실행 흐름용 컴파일 실패: " + p.stderr.strip()[:500]}
+        p = subprocess.run(pinned([javac, "-nowarn", "-cp", tools, "-d", trc, os.path.join(HERE, "LineTracer.java")]),
+                           capture_output=True, text=True, timeout=120)
+        if p.returncode:
+            return {"error": "LineTracer 컴파일 실패: " + p.stderr.strip()[:500]}
+        segs = {}
+        for side, fqn in (("old", old_fqn), ("new", new_fqn)):
+            out = os.path.join(tmp, side + ".json")
+            # the traced VM is started by LineTracer from the same JDK; taskset is inherited
+            subprocess.run(pinned([java, "-Xmx512m", "-cp", tools + os.pathsep + trc, "LineTracer", tgt,
+                                   "ArdiffTraceMain " + side, fqn, out]), capture_output=True, text=True, timeout=timeout)
+            segs[side] = json.load(open(out)) if os.path.exists(out) else []
+        idx, res = 0, []
+        for c in calls:                       # inputs that could not be written as literals have no segment
+            if c == "null":
+                res.append(None); continue
+            o = segs["old"][idx] if idx < len(segs["old"]) else None
+            n = segs["new"][idx] if idx < len(segs["new"]) else None
+            res.append({"old": o, "new": n} if o and n else None)
+            idx += 1
+        return {"traces": res}
+    except (subprocess.TimeoutExpired, ValueError) as ex:
+        return {"error": f"실행 흐름 기록 실패: {ex}"}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 # ------------------------------------------------------------------ main analysis
 def analyze(run_dir, z3=None, jhome=None, use_z3=True, use_exec=True, params=None):
     run_dir = os.path.abspath(run_dir)
@@ -564,6 +632,16 @@ def analyze(run_dir, z3=None, jhome=None, use_z3=True, use_exec=True, params=Non
         if verdict == "UNKNOWN" and any(r["differs"] for r in ex.get("runs", [])):
             rep["exec_verdict"] = "NOT EQUIVALENT"
             rep["notes"].append("ARDiff는 판정하지 못했지만 실제 실행에서 결과가 다른 입력을 찾음")
+        # line-by-line execution of the inputs the report will show
+        import semview
+        shown = [sc["inputs"] for sc in semview.scenarios(rep)]
+        if shown:
+            tr = run_traces(run_dir, shown, java_home(jhome))
+            if tr.get("error"):
+                rep["notes"].append(tr["error"])
+            else:
+                rep["traces"] = {json.dumps(i, sort_keys=True, default=str): t
+                                 for i, t in zip(shown, tr["traces"]) if t}
     return rep
 
 

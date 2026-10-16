@@ -48,7 +48,9 @@ cd refinement
 | `CORES` | `120-159` | 사용할 CPU 코어 (`taskset -c`) |
 | `JOBS` | `4` | 동시에 실행할 예제 수 (예제 1개 = JVM 1개) |
 | `TIMEOUT` | `300` | 예제 하나의 제한 시간(초). `scan`은 120초 고정 |
-| `HEAP` | `8G` | JVM 최대 힙 (`-Xmx`) |
+| `HEAP` | `8G` | ARDiff JVM 최대 힙 (`-Xmx`) |
+| `JPF_HEAP` | `3g` | ARDiff가 띄우는 JPF JVM의 최대 힙 (`JAVA_TOOL_OPTIONS`로 전달) |
+| `OUTPUT_CAP_MB` | `5` | 이보다 큰 ARDiff 텍스트 출력(주로 JPF 출력)은 앞 4/5 + 뒤 1/5만 남김 |
 | `TOOL_ARGS` | `--tool A --H H123` | ARDiff 옵션. 예: `--tool A --H R`, `--b 3` |
 | `OUT_HTML` | `./refinement-viewer.html` | 뷰어 출력 경로 |
 | `ARDIFF_REPO` | 상위 폴더 또는 `~/workspace/ARDiff` | ARDiff repo 위치 |
@@ -186,6 +188,9 @@ pairs/NNN_<Class.method>/   ARDiff 입력(oldV/newV.java)과 실행 결과 전�
    (`difft`가 PATH나 `DIFFT`에 있으면 difftastic 구조 비교, 없으면 줄·토큰 단위 비교).
    그 위에 결과가 달라지는 입력 목록을 두고, 입력을 고르면 각 버전이 지나는 조건 줄과 반환 줄, 반환값을 코드에 표시합니다.
    ARDiff가 UNKNOWN이어도 실제 실행에서 결과가 다른 입력을 찾으면 "실행 결과 다름"으로 표시합니다
+6. **실행 흐름** (`commitcheck/LineTracer.java`): 보고서에 나오는 입력마다 old/new를 JDI(디버거 API)로 한 줄씩 실행해 지나간 줄을 기록하고,
+   코드 옆에 화살표로 그립니다 (되돌아가는 화살표는 점선, `×n` = 반복 횟수). 실행되지 않은 줄은 흐리게, old/new가 처음 다른 줄로 가는 곳은
+   빨간 선으로 표시하고, "따라가기"로 두 버전을 한 단계씩 나란히 진행해 볼 수 있습니다. JDK 8의 `lib/tools.jar`가 필요합니다
 
 ARDiff 실행 결과 하나만 분석하려면: `python3 commitcheck/semdiff.py bench/Ran/ran/NEq`
 
@@ -207,7 +212,8 @@ ARDiff 실행 결과 하나만 분석하려면: `python3 commitcheck/semdiff.py 
 | `commitcheck/commit_check.py` | 커밋 단위 EQ/NEQ 판정 (`commit` 명령) |
 | `commitcheck/semdiff.py` | ARDiff 결과 해석: NEQ의 의미 차이 분석 |
 | `commitcheck/javasrc.py` | 메서드 추출용 가벼운 Java 스캐너 |
-| `commitcheck/semview.py` | difftastic식 나란히 보기 + 의미 차이 표시 |
+| `commitcheck/semview.py` | difftastic식 나란히 보기 + 의미 차이·실행 흐름 표시 |
+| `commitcheck/LineTracer.java` | 입력별로 실행된 줄 순서를 기록하는 JDI 트레이서 |
 | `scan.txt` | `scan` 결과 (`iteration 수\|판정\|경로`), git에서 제외 |
 
 GitHub Actions/Pages 연동은 repo 루트의 `SETUP.md`와 `.github/workflows/refinement-pages.yml`을 참고하세요.
