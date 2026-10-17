@@ -7,7 +7,7 @@ counterexamples confirmed by running the code).
 usage: unified_report.py OUT.html PAIR_DIR...      (ARDiff runs made by ardiff-workflow.sh / commit_check.py)
 Writes OUT.html plus viewers/<pair>.html (refinement viewer) next to it.
 """
-import html, json, os, subprocess, sys
+import html, json, os, re, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -35,6 +35,16 @@ def pair_name(d):
         return json.load(open(os.path.join(d, "meta.json")))["file"]
     except (OSError, ValueError, KeyError):
         return os.path.basename(d)
+
+
+def src_title(src):
+    """tooltip text for where an input came from"""
+    if src == "ARDiff counterexample":
+        return "ARDiff counterexample: the input z3 found where old and new differ"
+    m = re.match(r"ARDiff path \((old|new)\) #(\d+)", src)
+    if m:
+        return f"ARDiff (JPF) test input for path {m.group(2)} of the {m.group(1)} version"
+    return src
 
 
 def example_input(m):
@@ -150,8 +160,8 @@ def build_pair(d, idx, jhome, out_dir):
             ev.append(f"<span class='ev sup' data-act='proof' data-hk='{k}'><span class='evk'>relies on</span><code>{h(s['text'])}</code>{it}</span>")
         for j in hk["runs"]:
             r = runs[j]
-            ev.append(f"<span class='ev run{' hid df' if r['hidden'] else ''}' role='button' tabindex='0' data-act='run' data-run='{j}' title='{h(r['src'])}'"
-                      f"{' hidden' if r['hidden'] else ''}><span class='evk'>{'missed by ARDiff' if r['hidden'] else 'ARDiff run'}</span>"
+            ev.append(f"<span class='ev run{' hid df' if r['hidden'] else ''}' role='button' tabindex='0' data-act='run' data-run='{j}' title='{h(src_title(r['src']))}'"
+                      f"{' hidden' if r['hidden'] else ''}>{'<span class=evk>missed by ARDiff</span>' if r['hidden'] else ''}"
                       f"<code>{h(r['label'])}</code><b>{h(r['ret_old'])}</b><span class='muted'>/</span><b class='hl'>{h(r['ret_new'])}</b></span>")
         tags = []
         if hk.get("bounded"):
@@ -168,12 +178,11 @@ def build_pair(d, idx, jhome, out_dir):
         cards.append(f"""<div class="hk {hk['role']}" data-hk="{k}" role="button" tabindex="0" title="{h(hk['label'])}">
 <div class="hkd"><div><span class="side">old</span>{code_lines(hk['old'])}</div><div><span class="side">new</span>{code_lines(hk['new'])}</div></div>
 {f'<div class="evs">{"".join(ev)}</div>' if ev else ""}</div>""")
-    ex_chips = "".join(f"<span class='ev run{' df' if runs[j]['differs'] else ''}' role='button' tabindex='0' data-act='run' data-run='{j}' title='{h(runs[j]['src'])}'>"
-                       f"<span class='evk'>{h(runs[j]['src'].replace('ARDiff ', ''))}</span>"
+    ex_chips = "".join(f"<span class='ev run{' df' if runs[j]['differs'] else ''}' role='button' tabindex='0' data-act='run' data-run='{j}' title='{h(src_title(runs[j]['src']))}'>"
                        f"<code>{h(runs[j]['label'])}</code><b>{h(runs[j]['ret_old'])}</b><span class='muted'>/</span><b class='{'hl' if runs[j]['differs'] else ''}'>{h(runs[j]['ret_new'])}</b></span>"
                        for j in example_runs)
     if ex_chips:
-        ex_chips = f"<span class='exh'>ARDiff inputs</span>{ex_chips}"
+        ex_chips = f"<span class='exh'>Inputs</span>{ex_chips}"
     if hidden_runs:
         hid = "".join(f"<span class='ev run hid df' hidden role='button' tabindex='0' data-act='run' data-run='{j}' title='per-change counterexample, not produced by ARDiff'>"
                       f"<span class='evk'>missed by ARDiff</span><code>{h(runs[j]['label'])}</code><b>{h(runs[j]['ret_old'])}</b>"
