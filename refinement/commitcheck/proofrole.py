@@ -30,7 +30,7 @@ class Unsupported(Exception):
 
 
 # ------------------------------------------------------------------ tokens
-TOK = re.compile(r"\s*(?:(?P<num>\d+\.\d*(?:[eE][-+]?\d+)?[dDfF]?|\d*\.\d+(?:[eE][-+]?\d+)?[dDfF]?|\d+[lLdDfF]?)"
+TOK = re.compile(r"\s*(?:(?P<num>\d+\.\d*(?:[eE][-+]?\d+)?[dDfF]?|\d*\.\d+(?:[eE][-+]?\d+)?[dDfF]?|\d+[eE][-+]?\d+[dDfF]?|\d+[lLdDfF]?)"
                  r"|(?P<id>[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)"
                  r"|(?P<op>>>>=|<<=|>>=|>>>|\+\+|--|&&|\|\||==|!=|<=|>=|\+=|-=|\*=|/=|%=|<<|>>|[-+*/%<>=!?:;,(){}\[\]&|^~]))")
 
@@ -87,7 +87,27 @@ class P:
             if self.at("else"):
                 self.take("else"); els = self.stmt()
             return {"k": "if", "cond": cond, "then": then, "else": els, "l0": line, "l1": (els or then)["l1"]}
-        if text in ("for", "while", "do", "switch", "try", "throw", "break", "continue"):
+        if text == "for":
+            self.take("for"); self.take("(")
+            init = self.simple_list(";") if not self.at(";") else self.take(";") and None
+            cond = self.expr() if not self.at(";") else ("bool", "true")
+            self.take(";")
+            update = self.simple_list(")") if not self.at(")") else self.take(")") and None
+            body = self.stmt()
+            return {"k": "loop", "init": init, "cond": cond, "update": update, "body": body, "l0": line, "l1": body["l1"]}
+        if text == "while":
+            self.take("while"); self.take("("); cond = self.expr(); self.take(")")
+            body = self.stmt()
+            return {"k": "loop", "init": None, "cond": cond, "update": None, "body": body, "l0": line, "l1": body["l1"]}
+        if text == "do":
+            self.take("do"); body = self.stmt(); self.take("while"); self.take("("); cond = self.expr(); self.take(")")
+            end = self.take(";")[2]
+            return {"k": "loop", "init": None, "cond": cond, "update": None, "body": body, "do": True, "l0": line, "l1": end}
+        if text in ("++", "--") and self.peek(1)[0] == "id":
+            st = self.simple(";")
+            st["l0"] = line
+            return st
+        if text in ("switch", "try", "throw", "break", "continue"):
             raise Unsupported(f"'{text}' statement")
         if text == "return":
             self.take("return"); e = self.expr(); end = self.take(";")[2]
@@ -119,6 +139,49 @@ class P:
             self.take(";")
             return {"k": "block", "body": [], "l0": line, "l1": line}
         raise Unsupported(f"statement starting with {text!r}")
+
+    def simple_list(self, term):
+        """comma-separated simple statements (for-loop header) as one block."""
+        line = self.peek()[2]
+        items = [self.simple(",;)")]
+        while self.t[self.i - 1][1] == ",":
+            items.append(self.simple(",;)"))
+        if self.t[self.i - 1][1] != term:
+            raise Unsupported("for header")
+        return items[0] if len(items) == 1 else {"k": "block", "body": items, "l0": line, "l1": items[-1]["l1"]}
+
+    def take_any(self, terms):
+        tok = self.peek()
+        if tok[1] is None or tok[1] not in terms:
+            raise Unsupported(f"expected one of {terms!r}, got {tok[1]!r}")
+        self.i += 1
+        return tok
+
+    def simple(self, term):
+        """declaration / assignment / x++ without the trailing ';' (for-loop header), then `term`."""
+        kind, text, line = self.peek()
+        if kind == "id" and text in TYPES and self.peek(1)[0] == "id":
+            self.take(); name = self.take()[1]; init = None
+            if self.at("="):
+                self.take("="); init = self.expr()
+            end = (self.take_any(term) if len(term) > 1 else self.take(term))[2]
+            return {"k": "decl", "type": TYPES[text], "vars": [(name, init)], "l0": line, "l1": end}
+        if text in ("++", "--"):
+            op = self.take()[1]; name = self.take()[1]
+            end = (self.take_any(term) if len(term) > 1 else self.take(term))[2]
+            return {"k": "assign", "name": name, "e": ("bin", op[0], ("var", name), ("num", "1")), "l0": line, "l1": end}
+        name = self.take()[1]
+        op = self.take()[1]
+        if op in ("++", "--"):
+            e = ("bin", op[0], ("var", name), ("num", "1"))
+        elif op in ("=", "+=", "-=", "*=", "/=", "%="):
+            e = self.expr()
+            if op != "=":
+                e = ("bin", op[0], ("var", name), e)
+        else:
+            raise Unsupported(f"loop header {op}")
+        end = (self.take_any(term) if len(term) > 1 else self.take(term))[2]
+        return {"k": "assign", "name": name, "e": e, "l0": line, "l1": end}
 
     # expressions (precedence climbing) --------------------------------
     BIN = [("||",), ("&&",), ("|",), ("^",), ("&",), ("==", "!="), ("<", ">", "<=", ">="), ("+", "-"), ("*", "/", "%")]
@@ -161,6 +224,9 @@ class P:
         if text in ("true", "false"):
             self.take()
             return ("bool", text)
+        if kind == "id" and self.peek(1)[1] == "=":
+            self.take(); self.take("=")
+            return ("assignx", text, self.expr())
         if kind == "id":
             self.take()
             if self.at("("):
@@ -185,8 +251,37 @@ PRELUDE = """(define-fun jdiv ((a Int) (b Int)) Int (ite (>= a 0) (ite (> b 0) (
 class Sym:
     """Compiles AST to SMT text against an environment {var: (sort, term)}."""
 
-    def __init__(self, real_div=False):
-        self.real_div = real_div
+    UNROLL = 20           # loop iterations unrolled (ARDiff's default bound is 5); terms stay linear via `defs`
+
+    def __init__(self, smt_div=False, ret_sort="Real"):
+        # smt_div: model Java int / and % with SMT div/mod (rounding down), as ARDiff's translation does;
+        # Java itself truncates toward zero (jdiv/jmod)
+        self.smt_div = smt_div
+        self.ret_sort = ret_sort
+        self.defs = []        # (name, sort, term): fresh constants that keep unrolled terms small
+        self.assume = []      # loop-bound assumptions (the loop exits within UNROLL iterations)
+        self.ufs = {}         # name -> (arg sorts, result sort) for calls we do not model
+        self.bounded = False
+
+    MAX_TERM = 200            # longer terms get their own constant, so nothing is ever copied twice
+    MAX_TOTAL = 4_000_000     # bytes of SMT per check; beyond this the code is reported as too large
+
+    def fresh(self, sort, term, hint):
+        name = f"d{len(self.defs)}_{hint}"
+        self.defs.append((name, sort, term))
+        self.total = getattr(self, "total", 0) + len(term)
+        if self.total > self.MAX_TOTAL:
+            raise Unsupported("formula too large")
+        return name
+
+    def share(self, sort, term, hint="t"):
+        """the term itself if short, otherwise a fresh constant defined as the term"""
+        return term if len(term) <= self.MAX_TERM else self.fresh(sort, term, re.sub(r"\W", "", hint)[:12] or "t")
+
+    def mk_ite(self, sort, c, a, b, hint):
+        if a == b:
+            return a
+        return self.share(sort, f"(ite {c} {a} {b})", hint)
 
     def num(self, text):
         t = text.rstrip("lLdDfF")
@@ -231,7 +326,11 @@ class Sym:
             if e[1] == "Math.abs" and len(args) == 1:
                 s, a = args[0]
                 return s, f"(ite (>= {a} 0) {a} (- {a}))" if s == "Int" else f"(ite (>= {a} 0.0) {a} (- {a}))"
-            raise Unsupported(f"call {e[1]}")
+            # any other call: an uninterpreted function, the same one on both sides (as ARDiff abstracts code)
+            sig = "_".join(sa[0] for sa in args)
+            fname = "uf_" + re.sub(r"\W", "_", e[1]) + (f"_{sig}" if sig else "")
+            self.ufs[fname] = ([sa[0] for sa in args], "Real")
+            return "Real", (f"({fname} {' '.join(sa[1] for sa in args)})" if args else fname)
         if k == "bin":
             op = e[1]
             (sa, ta), (sb, tb) = self.ev(e[2], env), self.ev(e[3], env)
@@ -250,14 +349,12 @@ class Sym:
             if op in ("+", "-", "*"):
                 return sort, f"({op} {ta} {tb})"
             if op == "/":
-                if sort == "Int" and not self.real_div:
-                    return "Int", f"(jdiv {ta} {tb})"
                 if sort == "Int":
-                    return "Real", f"(/ (to_real {ta}) (to_real {tb}))"
+                    return "Int", f"({'div' if self.smt_div else 'jdiv'} {ta} {tb})"
                 return "Real", f"(/ {ta} {tb})"
             if op == "%":
                 if sort == "Int":
-                    return "Int", f"(jmod {ta} {tb})"
+                    return "Int", f"({'mod' if self.smt_div else 'jmod'} {ta} {tb})"
                 raise Unsupported("real %")
         raise Unsupported(f"expression {k}")
 
@@ -270,53 +367,114 @@ class Sym:
         raise Unsupported(f"mixed {sa}/{sb}")
 
     def run(self, stmts, env, sorts, havoc=None):
-        """Execute statements; env/sorts updated in place copies. havoc: set of statement ids whose effect is replaced
-        by fresh symbols (used to find which earlier statements the proof needs)."""
+        """Execute statements in place on env {var: (sort, term)}. env carries "__done"/"__ret" for early returns.
+        havoc: ids of statements whose effect is replaced by fresh symbols (to find which statements a proof needs)."""
         for s in stmts:
-            if havoc is not None and id(s) in havoc:
-                for v in defs_of(s):
-                    if v in sorts:
-                        env[v] = (sorts[v], f"h{len(havoc)}_{id(s) % 100000}_{v}")
-                        HAVOCS[env[v][1]] = sorts[v]
-                continue
-            k = s["k"]
-            if k == "block":
-                self.run(s["body"], env, sorts, havoc)
-            elif k == "decl":
-                for name, init in s["vars"]:
-                    sorts[name] = s["type"]
-                    if init is not None:
-                        so, t = self.ev(init, env)
-                        if so != s["type"]:
-                            t = f"(to_real {t})" if s["type"] == "Real" and so == "Int" else f"(jtrunc {t})" if s["type"] == "Int" and so == "Real" else t
-                        env[name] = (s["type"], t)
-                    else:
-                        env[name] = (s["type"], "0" if s["type"] == "Int" else "0.0" if s["type"] == "Real" else "false")
-            elif k == "assign":
-                if s["name"] not in sorts:
-                    raise Unsupported(f"assignment to {s['name']}")
-                so, t = self.ev(s["e"], env)
-                want = sorts[s["name"]]
-                if so != want:
-                    t = f"(to_real {t})" if want == "Real" else f"(jtrunc {t})" if want == "Int" else t
-                env[s["name"]] = (want, t)
-            elif k == "if":
-                _, c = self.ev(s["cond"], env)
-                e1, e2 = dict(env), dict(env)
-                self.run([s["then"]], e1, sorts, havoc)
-                if s["else"]:
-                    self.run([s["else"]], e2, sorts, havoc)
-                if "__ret" in e1 or "__ret" in e2:
-                    raise Unsupported("return inside if")
-                for v in set(e1) | set(e2):
-                    if e1.get(v) != e2.get(v) and v in e1 and v in e2:
-                        env[v] = (e1[v][0], f"(ite {c} {e1[v][1]} {e2[v][1]})")
-            elif k == "return":
-                env["__ret"] = self.ev(s["e"], env)
+            done = env.get("__done", ("Bool", "false"))[1]
+            before = dict(env)
+            self.step(s, env, sorts, havoc)
+            if done != "false":
+                # statements after a return do nothing
+                for v in set(env):
+                    if v in before and env[v] != before[v]:
+                        env[v] = (env[v][0], self.mk_ite(env[v][0], done, before[v][1], env[v][1], v))
         return env
+
+    def hoist(self, e, env, sorts):
+        """execute `x = e` sub-expressions (left to right) and replace them by x."""
+        if isinstance(e, tuple):
+            if e[0] == "assignx":
+                inner = self.hoist(e[2], env, sorts)
+                if e[1] not in sorts:
+                    raise Unsupported(f"assignment to {e[1]}")
+                self.assign(env, sorts, e[1], *self.ev(inner, env))
+                return ("var", e[1])
+            return tuple(self.hoist(x, env, sorts) if isinstance(x, (tuple, list)) else x for x in e)
+        if isinstance(e, list):
+            return [self.hoist(x, env, sorts) for x in e]
+        return e
+
+    def assign(self, env, sorts, name, so, t):
+        want = sorts[name]
+        if so != want:
+            t = f"(to_real {t})" if want == "Real" and so == "Int" else f"(jtrunc {t})" if want == "Int" and so == "Real" else t
+        env[name] = (want, self.share(want, t, name))
+
+    def step(self, s, env, sorts, havoc):
+        if havoc is not None and id(s) in havoc:
+            if s["k"] == "decl":                 # the variable still exists, only its value is unknown
+                for name, _ in s["vars"]:
+                    sorts[name] = s["type"]
+            for v in defs_of(s):
+                if v in sorts:
+                    env[v] = (sorts[v], f"h{len(havoc)}_{id(s) % 100000}_{v}")
+                    HAVOCS[env[v][1]] = sorts[v]
+            return
+        k = s["k"]
+        if k == "block":
+            self.run(s["body"], env, sorts, havoc)
+        elif k == "decl":
+            for name, init in s["vars"]:
+                sorts[name] = s["type"]
+                if init is not None:
+                    self.assign(env, sorts, name, *self.ev(init, env))
+                else:
+                    env[name] = (s["type"], "0" if s["type"] == "Int" else "0.0" if s["type"] == "Real" else "false")
+        elif k == "assign":
+            if s["name"] not in sorts:
+                raise Unsupported(f"assignment to {s['name']}")
+            self.assign(env, sorts, s["name"], *self.ev(self.hoist(s["e"], env, sorts), env))
+        elif k == "if":
+            _, c = self.ev(self.hoist(s["cond"], env, sorts), env)
+            e1, e2 = dict(env), dict(env)
+            self.run([s["then"]], e1, sorts, havoc)
+            if s["else"]:
+                self.run([s["else"]], e2, sorts, havoc)
+            self.merge(env, c, e1, e2)
+        elif k == "loop":
+            self.bounded = True
+            if s["init"]:
+                self.step(s["init"], env, sorts, havoc)
+            if s.get("do"):
+                self.run([s["body"]], env, sorts, havoc)
+            for _ in range(self.UNROLL):
+                _, c = self.ev(self.hoist(s["cond"], env, sorts), env)
+                c = f"(and {c} (not {env['__done'][1]}))" if env.get("__done", ("Bool", "false"))[1] != "false" else c
+                body = dict(env)
+                self.run([s["body"]] + ([s["update"]] if s["update"] else []), body, sorts, havoc)
+                self.merge(env, c, body, dict(env))
+            _, c = self.ev(self.hoist(s["cond"], env, sorts), env)
+            self.assume.append(f"(or (not {c}) {env.get('__done', ('Bool', 'false'))[1]})")
+        elif k == "return":
+            so, t = self.ev(self.hoist(s["e"], env, sorts), env)
+            if so != self.ret_sort:
+                t = f"(to_real {t})" if self.ret_sort == "Real" and so == "Int" else t
+            env["__ret"] = (self.ret_sort, t)
+            env["__done"] = ("Bool", "true")
+
+    def merge(self, env, c, e1, e2):
+        c = self.share("Bool", c, "c")
+        for v in set(e1) | set(e2):
+            if v in e1 and v in e2:
+                env[v] = e1[v] if e1[v] == e2[v] else (e1[v][0], self.mk_ite(e1[v][0], c, e1[v][1], e2[v][1], v))
 
 
 HAVOCS = {}
+
+
+def has_return(s):
+    if s is None:
+        return False
+    k = s["k"]
+    if k == "return":
+        return True
+    if k == "block":
+        return any(has_return(x) for x in s["body"])
+    if k == "if":
+        return has_return(s["then"]) or has_return(s["else"])
+    if k == "loop":
+        return has_return(s["body"])
+    return False
 
 
 def defs_of(s):
@@ -329,6 +487,8 @@ def defs_of(s):
         return [v for x in s["body"] for v in defs_of(x)]
     if k == "if":
         return defs_of(s["then"]) + (defs_of(s["else"]) if s["else"] else [])
+    if k == "loop":
+        return (defs_of(s["init"]) if s["init"] else []) + defs_of(s["body"]) + (defs_of(s["update"]) if s["update"] else [])
     return []
 
 
@@ -350,9 +510,13 @@ def vars_in(node):
 
 
 # ------------------------------------------------------------------ z3
-def z3_check(z3, consts, claim, getv, timeout=8):
-    """claim: Bool term that must be valid. -> ("valid"|"invalid"|"unknown", model dict)"""
+def z3_check(z3, consts, claim, getv, timeout=8, defs=(), assume=(), ufs=None):
+    """claim: Bool term that must be valid (under defs/assume). -> ("valid"|"invalid"|"unknown", model dict)"""
     decl = "".join(f"(declare-fun {n} () {s})\n" for n, s in sorted(consts.items()))
+    decl += "".join(f"(declare-fun {n} ({' '.join(a)}) {r})\n" for n, (a, r) in sorted((ufs or {}).items()))
+    decl += "".join(f"(declare-fun {n} () {so})\n" for n, so, _ in defs)
+    decl += "".join(f"(assert (= {n} {t}))\n" for n, _, t in defs)
+    decl += "".join(f"(assert {x})\n" for x in assume)
     q = (f"(set-option :timeout {timeout * 1000})\n{PRELUDE}{decl}(assert (not {claim}))\n(check-sat)\n"
          + (f"(get-value ({' '.join(getv)}))\n" if getv else ""))
     try:
@@ -362,6 +526,15 @@ def z3_check(z3, consts, claim, getv, timeout=8):
         return "unknown", {}
     first = out.strip().split("\n", 1)[0] if out.strip() else ""
     if first == "unsat":
+        if assume:
+            # valid only matters if some input actually finishes the loops within the unroll bound
+            q2 = f"(set-option :timeout {timeout * 1000})\n{PRELUDE}{decl}(check-sat)\n"
+            try:
+                p2 = subprocess.run(semdiff.pinned([z3, "-in", "-smt2"]), input=q2, capture_output=True, text=True, timeout=timeout + 10)
+                if p2.stdout.strip().split("\n", 1)[0] != "sat":
+                    return "vacuous", {}
+            except subprocess.TimeoutExpired:
+                return "unknown", {}
         return "valid", {}
     if first != "sat":
         return "unknown", {}
@@ -476,10 +649,52 @@ def analyze(run_dir, z3=None):
         else:
             groups.append(g)
 
-    out = []
-    for g in groups:
-        out.append(analyze_group(g, mo, mn, ol, nl, z3, picked))
-    return {"hunks": out, "statuses": statuses}
+    out, i = [], 0
+    while i < len(groups):
+        g = groups[i]
+        h = analyze_group(g, mo, mn, ol, nl, z3, picked)
+        # e.g. a declaration removed in one hunk and its use rewritten in the next: judge them together
+        while h.get("why") == "variable not defined on both sides" and i + 1 < len(groups):
+            i += 1
+            n = groups[i]
+            g = {"old_idx": sorted(set(g["old_idx"]) | set(n["old_idx"]) | set(range(g["old_pos"], (max(n["old_idx"]) + 1) if n["old_idx"] else n["old_pos"]))),
+                 "new_idx": sorted(set(g["new_idx"]) | set(n["new_idx"]) | set(range(g["new_pos"], (max(n["new_idx"]) + 1) if n["new_idx"] else n["new_pos"]))),
+                 "old_pos": g["old_pos"], "new_pos": g["new_pos"], "lines": g["lines"] + n["lines"]}
+            h = analyze_group(g, mo, mn, ol, nl, z3, picked)
+        out.append(h)
+        i += 1
+    # which earlier changes a change reads from (e.g. a hoisted value, a flipped sign)
+    for k, h in enumerate(out):
+        reads = set(h.get("reads", []))
+        h["uses_changes"] = [j for j in range(k) if reads & set(out[j].get("writes", []))]
+    overall = whole_program(mo, mn, z3)
+    if overall == "valid":
+        # a change that alters intermediate values but whose effect a later change undoes
+        for k, h in enumerate(out):
+            if h.get("role") == "breaks":
+                h["role"] = "compensated"
+                h["intermediate_example"] = h.pop("counterexample", None)   # values differ here, not in the result
+                h["compensated_by"] = [j for j in range(k + 1, len(out)) if out[j].get("role") not in ("identity", "comment", "no-effect")]
+    return {"hunks": out, "statuses": statuses, "overall": overall}
+
+
+def whole_program(mo, mn, z3):
+    """Do old and new return the same value for every input (loops unrolled, calls uninterpreted)?"""
+    try:
+        sym = Sym(ret_sort=mo["ret"])
+        envs = []
+        for m in (mo, mn):
+            env = {n: (s_, n) for n, s_ in m["params"]}
+            env["__done"], env["__ret"] = ("Bool", "false"), (mo["ret"], "ret_none")
+            sym.run(m["stmts"], env, {n: s_ for n, s_ in m["params"]})
+            envs.append(env)
+        sort, a, b = sym.unify(*envs[0]["__ret"], *envs[1]["__ret"])
+        consts = {n: s_ for n, s_ in mo["params"]}
+        consts["ret_none"] = mo["ret"]
+        res, _ = z3_check(z3, consts, f"(= {a} {b})", [], defs=sym.defs, assume=sym.assume, ufs=sym.ufs)
+        return res
+    except Unsupported:
+        return "unsupported"
 
 
 def analyze_group(g, mo, mn, ol, nl, z3, picked):
@@ -500,12 +715,14 @@ def analyze_group(g, mo, mn, ol, nl, z3, picked):
         return h
 
     written = set(v for s in hold + hnew for v in defs_of(s))
+    h["writes"] = sorted(written)
+    h["reads"] = sorted(vars_in(hold) | vars_in(hnew))
     read_after = vars_in(suf_o) | vars_in(suf_n)
     live = sorted(v for v in written if v in read_after)
-    returns_here = any(s["k"] == "return" for s in hold + hnew)
+    returns_here = any(has_return(s) for s in hold + hnew)
     if returns_here:
-        live = live + ["__ret"]
-    h["live"] = [v for v in live if v != "__ret"]
+        live = live + ["__done", "__ret"]
+    h["live"] = [v for v in live if not v.startswith("__")]
     if not live:
         h["role"] = "no-effect"
         return h
@@ -521,19 +738,20 @@ def analyze_group(g, mo, mn, ol, nl, z3, picked):
 
     def env_for(prefix, model, sym, havoc=None, fresh=False):
         env = {n: (s, n) for n, s in model["params"]}
+        env["__done"], env["__ret"] = ("Bool", "false"), (mo["ret"], "ret_none")
         sorts = {n: s for n, s in model["params"]}
         if fresh:
             # every variable the hunk touches starts as an unconstrained symbol (no context)
-            sym.run(prefix, {n: v for n, v in env.items()}, sorts)          # collect declared sorts
+            Sym(ret_sort=mo["ret"]).run(prefix, dict(env), sorts)          # only to collect declared sorts
             for v, s in sorts.items():
                 env[v] = (s, f"v0_{v}")
             return env, sorts
         sym.run(prefix, env, sorts, havoc)
         return env, sorts
 
-    def check(fresh=False, havoc_o=None, havoc_n=None, real_div=False):
+    def check(fresh=False, havoc_o=None, havoc_n=None, smt_div=False, timeout=8):
         HAVOCS.clear()
-        sym = Sym(real_div)
+        sym = Sym(smt_div, mo["ret"])
         eo, so_ = env_for(pre_o, mo, sym, havoc_o, fresh)
         en, sn_ = env_for(pre_n, mn, sym, havoc_n, fresh)
         if fresh:
@@ -548,12 +766,15 @@ def analyze_group(g, mo, mn, ol, nl, z3, picked):
         if c is None:
             raise Unsupported("variable not defined on both sides")
         consts = {n: s for n, s in mo["params"]}
+        consts["ret_none"] = mo["ret"]
         if fresh:
             consts.update({f"v0_{v}": s for v, s in {**so_, **sn_}.items()})
         consts.update(HAVOCS)
         getv = [n for n, _ in mo["params"]] + ([f"v0_{v}" for v in vars_in(hold + hnew) if f"v0_{v}" in consts] if fresh else [])
         getv += [t for v in live for t in (eo[v][1], en[v][1])][:0]
-        res, model = z3_check(z3, consts, c, getv)
+        res, model = z3_check(z3, consts, c, getv, timeout=timeout, defs=sym.defs, assume=sym.assume, ufs=sym.ufs)
+        if sym.bounded:
+            h["bounded"] = Sym.UNROLL
         return res, model, eo, en
 
     try:
@@ -564,6 +785,9 @@ def analyze_group(g, mo, mn, ol, nl, z3, picked):
         full, fmodel, eo, en = check()
     except Unsupported as ex:
         h["role"] = "unsupported"; h["why"] = str(ex)
+        return h
+    if "vacuous" in (local, full):
+        h["role"] = "unknown"; h["why"] = f"a loop runs more than {Sym.UNROLL} times"
         return h
 
     if full == "valid":
@@ -580,7 +804,7 @@ def analyze_group(g, mo, mn, ol, nl, z3, picked):
                 ho = {id(pre_o[i]) for i in range(len(pre_o)) if i not in trial}
                 hn = {id(pre_n[i]) for i in range(len(pre_n)) if i not in trial}
                 try:
-                    r, _, _, _ = check(havoc_o=ho, havoc_n=hn)
+                    r, _, _, _ = check(havoc_o=ho, havoc_n=hn, timeout=3)
                 except Unsupported:
                     r = "unknown"
                 if r == "valid":
@@ -590,7 +814,7 @@ def analyze_group(g, mo, mn, ol, nl, z3, picked):
                          "new_line": pre_n[i]["l0"] if same_prefix else None}
                         for i in need] if same_prefix else []
         if not same_prefix:
-            h["note"] = "앞선 다른 변경까지 포함한 문맥에서 성립"
+            h["note"] = "holds given the earlier changes"
         return h
 
     if full == "invalid":
@@ -598,9 +822,10 @@ def analyze_group(g, mo, mn, ol, nl, z3, picked):
         params = [n for n, _ in mo["params"]]
         h["counterexample"] = {k: v for k, v in fmodel.items() if k in params}
         try:
-            rdiv, _, _, _ = check(real_div=True)
+            rdiv, _, _, _ = check(smt_div=True)
             if rdiv == "valid":
-                h["note"] = "정수 나눗셈을 실수 나눗셈으로 보면 성립함 (ARDiff가 같다고 판단할 수 있는 이유)"
+                h["note"] = "holds with SMT div (rounds down, ARDiff's encoding); Java's / truncates toward zero"
+                h["smt_div_only"] = True
         except Unsupported:
             pass
         return h

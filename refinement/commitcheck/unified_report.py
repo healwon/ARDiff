@@ -17,7 +17,8 @@ import semview  # noqa: E402
 import slicer  # noqa: E402
 
 ROLE = {"identity": ("holds on its own", "id"), "context": ("holds given shared code", "ctx"),
-        "breaks": ("changes the result", "brk"), "no-effect": ("no effect", "nof"), "comment": ("comments only", "nof"),
+        "breaks": ("changes the result", "brk"), "compensated": ("undone by a later change", "cmp"),
+        "no-effect": ("no effect", "nof"), "comment": ("comments only", "nof"),
         "unsupported": ("not analysed", "unk"), "unknown": ("unknown", "unk")}
 
 
@@ -50,23 +51,46 @@ def build_pair(d, idx, jhome, out_dir):
     _, m = semdiff.target_method(os.path.join(d, "oldV.java"), "oldV")
     params = [n for _, n in m.params] if m else []
 
-    # inputs to run: each counterexample, plus one example input so equivalent pairs also show their flow
-    inputs, owner = [], []
-    for k, hk in enumerate(pr["hunks"]):
-        if hk.get("counterexample"):
-            inputs.append({p: hk["counterexample"].get(p, 0) for p in params}); owner.append(k)
-    if m:
-        ex = example_input(m)
-        if ex not in inputs:
-            inputs.append(ex); owner.append(None)
-    traces = semdiff.run_traces(d, inputs, jhome).get("traces", []) if inputs else []
+    # inputs to run: only what ARDiff produced — its counterexample (z3 model) and JPF's test input for every
+    # symbolic path it explored (last refinement iteration, old and new)
+    last, _ = semdiff.last_iteration(d)
+    cands, seen = [], set()
+
+    def add(inp, src):
+        # JPF prints an out-of-range sentinel (e.g. Long.MIN_VALUE) for inputs a path does not constrain: use 0
+        full = {p_: (v if v is not None and not (isinstance(v, int) and not -2**31 <= v < 2**31) else 0)
+                for p_, v in ((q, inp.get(q)) for q in params)}
+        key = json.dumps(full, sort_keys=True)
+        if params and key not in seen:
+            seen.add(key); cands.append({"inputs": full, "source": src})
+    model = semdiff.parse_model(semdiff.read(os.path.join(last, "z3summary.txt"))) or {}
+    ce = {k: semdiff.sx_value(v["value"]) for k, v in model.items() if not v["args"] and k in params}
+    if ce:
+        add(ce, "ARDiff counterexample")
+    for side in ("old", "new"):
+        for n, t in enumerate(semdiff.parse_jpf_tests(semdiff.read(os.path.join(last, f"I{side}VARDiffJPFOutput.txt")))):
+            add(t, f"ARDiff path ({side}) #{n + 1}")
+    executed = semdiff.run_concrete(d, cands[:80], jhome).get("runs", []) if cands else []
+    n_exec, n_diff = len(executed), sum(r["differs"] for r in executed)
+    show = [r for r in executed if r["differs"]][:8] + [r for r in executed if not r["differs"]][:4]
+    # inputs that show ARDiff is wrong: it said EQUIVALENT, the per-change analysis found an input that differs
+    # and running it confirms. Kept out of the default view.
+    extra = []
+    if ardiff == "EQUIVALENT":
+        xc = [{"inputs": {p_: hk["counterexample"].get(p_, 0) for p_ in params}, "source": "missed by ARDiff", "hunk": k}
+              for k, hk in enumerate(pr["hunks"]) if hk.get("counterexample")]
+        xr = semdiff.run_concrete(d, xc, jhome).get("runs", []) if xc else []
+        extra = [dict(r, hidden=True) for r in xr if r["differs"]]
+    show += extra
+    traces = semdiff.run_traces(d, [r["inputs"] for r in show], jhome).get("traces", []) if show else []
     runs = []
-    for j, (inp, k) in enumerate(zip(inputs, owner)):
+    for j, r in enumerate(show):
         t = traces[j] if j < len(traces) else None
         if not t:
             continue
         to, tn = [x - 1 for x in t["old"]["lines"]], [x - 1 for x in t["new"]["lines"]]
-        runs.append({"label": fmt(inp), "kind": "counterexample" if k is not None else "example", "hunk": k,
+        runs.append({"label": fmt(r["inputs"]), "src": r["source"], "differs": r["differs"], "hunk": r.get("hunk"),
+                     "hidden": bool(r.get("hidden")),
                      "to": to, "tn": tn, "so": slicer.dynamic_slice(a, to), "sn": slicer.dynamic_slice(b, tn),
                      "ret_old": t["old"].get("ret"), "ret_new": t["new"].get("ret"),
                      "cut": bool(t["old"].get("truncated") or t["new"].get("truncated"))})
@@ -78,15 +102,21 @@ def build_pair(d, idx, jhome, out_dir):
     for k, hk in enumerate(pr["hunks"]):
         label, cls = ROLE.get(hk["role"], ROLE["unknown"])
         hunks.append({"ol": hk["old_lines"], "nl": hk["new_lines"], "role": cls, "label": label,
+                      "bounded": hk.get("bounded"), "why": hk.get("why"), "smt_div_only": hk.get("smt_div_only"), "cby": [c for c in hk.get("compensated_by", [])],
+                      "uses": hk.get("uses_changes", []) if hk["role"] in ("context", "compensated") else [],
                       "old": hk["old_text"], "new": hk["new_text"],
                       "sup": [{"l": s["line"], "nl": s.get("new_line"), "text": s["text"], "it": s.get("refined_iter")}
                               for s in hk.get("support", [])],
-                      "runs": [j for j, r in enumerate(runs) if r["hunk"] == k]})
-    example_runs = [j for j, r in enumerate(runs) if r["hunk"] is None]
+                      # differing ARDiff runs that actually execute this (result-changing) change
+                      "runs": [j for j, r in enumerate(runs) if r["differs"] and hk["role"] == "breaks" and (
+                          r.get("hunk") == k if r["hidden"] else
+                          any(l - 1 in r["to"] for l in hk["old_lines"]) or any(l - 1 in r["tn"] for l in hk["new_lines"]))]})
+    example_runs = [j for j, r in enumerate(runs) if not r["hidden"]]
+    hidden_runs = [j for j, r in enumerate(runs) if r["hidden"]]
 
     any_break = any(x["role"] == "brk" for x in hunks)
-    per_change = "NOT EQUIVALENT" if any_break else ("EQUIVALENT" if hunks and all(x["role"] in ("id", "ctx", "nof") for x in hunks) else "?")
-    run_diff = any(r["ret_old"] != r["ret_new"] for r in runs)
+    per_change = "NOT EQUIVALENT" if any_break else ("EQUIVALENT" if hunks and all(x["role"] in ("id", "ctx", "nof", "cmp") for x in hunks) else "?")
+    run_diff = n_diff > 0
 
     # refinement viewer for this pair
     vrel = None
@@ -120,24 +150,44 @@ def build_pair(d, idx, jhome, out_dir):
             ev.append(f"<span class='ev sup' data-act='proof' data-hk='{k}'><span class='evk'>relies on</span><code>{h(s['text'])}</code>{it}</span>")
         for j in hk["runs"]:
             r = runs[j]
-            ev.append(f"<span class='ev run' role='button' tabindex='0' data-act='run' data-run='{j}'><span class='evk'>run</span>"
+            ev.append(f"<span class='ev run{' hid df' if r['hidden'] else ''}' role='button' tabindex='0' data-act='run' data-run='{j}' title='{h(r['src'])}'"
+                      f"{' hidden' if r['hidden'] else ''}><span class='evk'>{'missed by ARDiff' if r['hidden'] else 'ARDiff run'}</span>"
                       f"<code>{h(r['label'])}</code><b>{h(r['ret_old'])}</b><span class='muted'>/</span><b class='hl'>{h(r['ret_new'])}</b></span>")
+        tags = []
+        if hk.get("bounded"):
+            tags.append(f"<span class='tag'>loops ≤ {hk['bounded']}</span>")
+        if hk.get("uses"):
+            tags.append("<span class='tag ctx'>relies on " + ", ".join(f"#{c + 1}" for c in hk["uses"]) + "</span>")
+        if hk.get("cby"):
+            tags.append("<span class='tag cmp'>undone by " + ", ".join(f"#{c + 1}" for c in hk["cby"]) + "</span>")
+        if hk.get("smt_div_only"):
+            tags.append("<span class='tag warn' title='ARDiff encodes Java / as SMT div, which rounds down; Java truncates toward zero'>equal under SMT div (ARDiff) · not under Java /</span>")
+        if hk.get("why") and hk["role"] == "unk":
+            tags.append(f"<span class='tag'>{h(hk['why'])}</span>")
+        ev = ([f"<div class='tags'><span class='num'>#{k + 1}</span>{''.join(tags)}</div>"]) + ev
         cards.append(f"""<div class="hk {hk['role']}" data-hk="{k}" role="button" tabindex="0" title="{h(hk['label'])}">
 <div class="hkd"><div><span class="side">old</span>{code_lines(hk['old'])}</div><div><span class="side">new</span>{code_lines(hk['new'])}</div></div>
 {f'<div class="evs">{"".join(ev)}</div>' if ev else ""}</div>""")
-    ex_chips = "".join(f"<span class='ev run' role='button' tabindex='0' data-act='run' data-run='{j}'><span class='evk'>example run</span>"
-                       f"<code>{h(runs[j]['label'])}</code><b>{h(runs[j]['ret_old'])}</b><span class='muted'>/</span><b>{h(runs[j]['ret_new'])}</b></span>"
+    ex_chips = "".join(f"<span class='ev run{' df' if runs[j]['differs'] else ''}' role='button' tabindex='0' data-act='run' data-run='{j}' title='{h(runs[j]['src'])}'>"
+                       f"<span class='evk'>{h(runs[j]['src'].replace('ARDiff ', ''))}</span>"
+                       f"<code>{h(runs[j]['label'])}</code><b>{h(runs[j]['ret_old'])}</b><span class='muted'>/</span><b class='{'hl' if runs[j]['differs'] else ''}'>{h(runs[j]['ret_new'])}</b></span>"
                        for j in example_runs)
+    if ex_chips:
+        ex_chips = f"<span class='exh'>ARDiff inputs</span>{ex_chips}"
+    if hidden_runs:
+        hid = "".join(f"<span class='ev run hid df' hidden role='button' tabindex='0' data-act='run' data-run='{j}' title='per-change counterexample, not produced by ARDiff'>"
+                      f"<span class='evk'>missed by ARDiff</span><code>{h(runs[j]['label'])}</code><b>{h(runs[j]['ret_old'])}</b>"
+                      f"<span class='muted'>/</span><b class='hl'>{h(runs[j]['ret_new'])}</b></span>" for j in hidden_runs)
+        ex_chips += (f"<button type='button' class='showmiss' aria-pressed='false'>show inputs ARDiff missed ({len(hidden_runs)})</button>{hid}")
     tl = "".join(f"<button type='button' class='it {'ok' if it['status'] == 'UNSATISFIABLE' else ''}' data-it='{it['i']}' "
                  f"title='{h(it['status'])}'>{it['i']}</button>" for it in iters)
     vcls = {"EQUIVALENT": "eq", "NOT EQUIVALENT": "neq"}.get
     uid = f"u{idx}"
     data = {"hunks": hunks, "runs": runs, "iters": iters}
+    SUMMARY.append({"uid": uid, "name": pair_name(d), "ardiff": ardiff, "iters": len(statuses)})
     return f"""<section class="pair" id="{uid}">
 <div class="ph"><h2>{h(pair_name(d))}</h2>
-<span class="chip {vcls(ardiff, 'unk')}">ARDiff: {h(ardiff)}</span>
-<span class="chip {vcls(per_change, 'unk')}">per change: {h(per_change)}</span>
-<span class="chip {'neq' if run_diff else 'eq'}">runs: {'differ' if run_diff else 'same'}</span></div>
+<span class="chip {vcls(ardiff, 'unk')}">ARDiff: {h(ardiff)}</span></div>
 <div class="tl"><span class="muted">ARDiff refinement</span>{tl}{f"<a class='vw' href='{vrel}'>open refinement viewer</a>" if vrel else ""}</div>
 <div class="cards">{''.join(cards) or "<p class='muted'>no changed statements</p>"}{f'<div class="exs">{ex_chips}</div>' if ex_chips else ""}</div>
 <div class="svw"><table><tr><th></th><th></th><th>old</th><th></th><th></th><th>new</th></tr>{''.join(trs)}</table><svg class="ov" aria-hidden="true"></svg></div>
@@ -204,7 +254,7 @@ function paint(){
     if(dv<0 && r.ret_old!==r.ret_new) root.querySelectorAll("td.c.fl.chg").forEach(function(td){ td.classList.add("dv"); });
     if(dv>=0){ var x=cell("L",r.to[dv]+1), y=cell("R",r.tn[dv]+1); if(x) x.classList.add("dv"); if(y) y.classList.add("dv"); }
     if(r.hunk!==null){ var hk=D.hunks[r.hunk]; hk.ol.forEach(function(l){ var c=cell("L",l); if(c){c.classList.add("selc"); c.dataset.role=hk.role;} }); hk.nl.forEach(function(l){ var c=cell("R",l); if(c){c.classList.add("selc"); c.dataset.role=hk.role;} }); }
-    mode.innerHTML="<b>run</b> "+r.label+" &nbsp; old <b>"+r.ret_old+"</b> / new <b>"+r.ret_new+"</b>";
+    mode.innerHTML="<b>"+r.src+"</b> "+r.label+" &nbsp; old <b>"+r.ret_old+"</b> / new <b>"+r.ret_new+"</b>";
     tg.hidden=false; tg.textContent=st.all?"steps that reach the result":"all steps";
   } else if(st.it!==null){
     var it=D.iters[st.it];
@@ -231,6 +281,12 @@ root.querySelectorAll(".ev.run").forEach(function(c){ var go=function(e){ e.stop
 root.querySelectorAll(".hk").forEach(function(c){ c.addEventListener("keydown", function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); c.click(); } }); });
 root.querySelectorAll(".it").forEach(function(b){ b.addEventListener("click", function(){ st.it=(st.it===+b.dataset.it)?null:+b.dataset.it; st.run=null; paint(); }); });
 root.querySelector(".tg").addEventListener("click", function(){ st.all=!st.all; paint(); });
+var sm=root.querySelector(".showmiss"); if(sm) sm.addEventListener("click", function(){
+  var on=sm.getAttribute("aria-pressed")!=="true"; sm.setAttribute("aria-pressed", on?"true":"false");
+  root.querySelectorAll(".ev.run.hid").forEach(function(c){ c.hidden=!on; });
+  if(!on && st.run!==null && D.runs[st.run].hidden){ st.run=null; }
+  paint();
+});
 window.addEventListener("resize", draw); window.addEventListener("load", draw);
 if(document.fonts&&document.fonts.ready) document.fonts.ready.then(draw);
 if(window.ResizeObserver) new ResizeObserver(draw).observe(wrap);
@@ -240,20 +296,25 @@ paint();
 CSS = """
 :root{--bg:#f6f6f3;--panel:#fff;--fg:#1d2128;--muted:#5f6670;--rule:#dcdcd6;--eq:#2a7d4f;--neq:#b8432f;--unk:#9a6d12;
 --id:#2a7d4f;--idsoft:#e4f2e9;--ctx:#2f62a8;--ctxsoft:#e3ecf8;--brk:#b8432f;--brksoft:#f8e4df;--nof:#7b7f87;--nofsoft:#eeeeec;
---sup:#c08a1c;--supsoft:#fbf0d6;--flow:#6b3fb3;--flowsoft:#efe6fb;--add:#e6f3ea;--del:#f9e7e3;
+--cmp:#0f7c86;--cmpsoft:#dff2f3;--sup:#c08a1c;--supsoft:#fbf0d6;--flow:#6b3fb3;--flowsoft:#efe6fb;--add:#e6f3ea;--del:#f9e7e3;
 --sans:"IBM Plex Sans","Helvetica Neue",system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121417;--panel:#1a1d22;--fg:#e4e6ea;--muted:#9aa1ab;--rule:#2c3038;
 --eq:#5cc18a;--neq:#ee7a64;--unk:#e0b04a;--id:#5cc18a;--idsoft:#18301f;--ctx:#7aa7ea;--ctxsoft:#1a2a40;--brk:#ee7a64;--brksoft:#3a1f1a;
---nof:#9aa1ab;--nofsoft:#24272d;--sup:#e8b84e;--supsoft:#352a12;--flow:#b892f0;--flowsoft:#2e2342;--add:#163020;--del:#3a1d19;color-scheme:dark}}
+--nof:#9aa1ab;--nofsoft:#24272d;--cmp:#4fc0c9;--cmpsoft:#14313a;--sup:#e8b84e;--supsoft:#352a12;--flow:#b892f0;--flowsoft:#2e2342;--add:#163020;--del:#3a1d19;color-scheme:dark}}
 :root[data-theme="dark"]{--bg:#121417;--panel:#1a1d22;--fg:#e4e6ea;--muted:#9aa1ab;--rule:#2c3038;--eq:#5cc18a;--neq:#ee7a64;--unk:#e0b04a;
---id:#5cc18a;--idsoft:#18301f;--ctx:#7aa7ea;--ctxsoft:#1a2a40;--brk:#ee7a64;--brksoft:#3a1f1a;--nof:#9aa1ab;--nofsoft:#24272d;
+--id:#5cc18a;--idsoft:#18301f;--ctx:#7aa7ea;--ctxsoft:#1a2a40;--brk:#ee7a64;--brksoft:#3a1f1a;--nof:#9aa1ab;--nofsoft:#24272d;--cmp:#4fc0c9;--cmpsoft:#14313a;
 --sup:#e8b84e;--supsoft:#352a12;--flow:#b892f0;--flowsoft:#2e2342;--add:#163020;--del:#3a1d19;color-scheme:dark}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5}
+*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5}
 .wrap{max-width:1280px;margin:0 auto;padding-inline:16px;padding-block:24px 64px;display:grid;gap:28px}
 h1{font-size:22px;margin:0}h2{font-size:15px;margin:0;font-family:var(--mono);word-break:break-all}
 code{font-family:var(--mono);font-size:12.5px}.muted{color:var(--muted)}.hl{color:var(--neq)}
 .pair{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:16px;display:grid;gap:12px;min-width:0}
 .ph{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center}
+.sum{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:16px;display:grid;gap:12px;min-width:0}
+.sumt{overflow-x:auto}.sumt table{border-collapse:collapse;width:100%;font-size:13px}
+.sumt th{font-weight:500;color:var(--muted);text-align:left;font-size:12px;padding:4px 10px;border-bottom:1px solid var(--rule)}
+.sumt td{padding:4px 10px;border-bottom:1px solid var(--rule);font-family:var(--mono);font-size:12.5px}.sumt td.num{text-align:right}
+.sumt a{color:inherit}.okm{color:var(--eq);font-weight:700}.bad{color:var(--neq);font-weight:700}
 .chip{font-family:var(--mono);font-size:11.5px;font-weight:600;padding:1px 9px;border-radius:99px;border:1.5px solid currentColor;white-space:nowrap}
 .chip.eq{color:var(--eq)}.chip.neq{color:var(--neq)}.chip.unk{color:var(--unk)}
 .tl{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:12px}.tl>.muted{margin-right:6px}
@@ -263,10 +324,16 @@ code{font-family:var(--mono);font-size:12.5px}.muted{color:var(--muted)}.hl{colo
 .tl .vw{margin-left:10px;color:var(--muted);font-size:12px}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,400px),1fr));gap:8px}
 .hk{display:grid;gap:8px;text-align:left;background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;cursor:pointer}
+.hk.cmp{box-shadow:inset 4px 0 0 var(--cmp)}.svw td.selc[data-role=cmp]{background:var(--cmpsoft);box-shadow:inset 3px 0 0 var(--cmp)}
+.tags{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.tags .num{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.tag{font-family:var(--mono);font-size:11px;border:1px solid var(--rule);border-radius:4px;padding:0 5px;color:var(--muted)}.tag.cmp{border-color:var(--cmp);color:var(--cmp)}.tag.warn{border-color:var(--unk);color:var(--unk)}.tag.ctx{border-color:var(--ctx);color:var(--ctx)}
 .hk.id{box-shadow:inset 4px 0 0 var(--id)}.hk.ctx{box-shadow:inset 4px 0 0 var(--ctx)}.hk.brk{box-shadow:inset 4px 0 0 var(--brk)}.hk.nof,.hk.unk{box-shadow:inset 4px 0 0 var(--nof)}
 .hk[aria-pressed="true"]{border-color:var(--fg)}.hk:focus-visible,.ev:focus-visible{outline:2px solid var(--ctx);outline-offset:2px}
 .hkd{display:grid;gap:2px;font-size:12.5px}.hkd .side{display:inline-block;width:32px;font-size:11px;color:var(--muted)}
-.evs,.exs{display:flex;flex-direction:column;gap:4px}.exs{grid-column:1/-1;flex-direction:row;flex-wrap:wrap}
+.evs,.exs{display:flex;flex-direction:column;gap:4px}.exs{grid-column:1/-1;flex-direction:row;flex-wrap:wrap;align-items:center}
+.exs .showmiss{font:inherit;font-size:11.5px;color:var(--unk);background:var(--panel);border:1px dashed var(--unk);border-radius:6px;padding:1px 8px;cursor:pointer}
+.exs .showmiss[aria-pressed="true"]{border-style:solid}
+.exs .exh{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-right:4px}.ev.run.df{box-shadow:inset 3px 0 0 var(--neq)}
 .ev{display:flex;gap:8px;align-items:center;border-radius:4px;padding:3px 8px;font-size:12.5px}
 .ev .evk{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);min-width:56px}
 .ev.sup{background:var(--supsoft);box-shadow:inset 3px 0 0 var(--sup)}
@@ -300,6 +367,34 @@ svg.ov .fl{fill:none;stroke:var(--flow);stroke-width:1.3;opacity:.85}svg.ov .fl.
 """
 
 
+SUMMARY = []
+
+
+def expected(name):
+    parts = name.replace("\\", "/").split("/")
+    return "NOT EQUIVALENT" if "NEq" in parts else "EQUIVALENT" if "Eq" in parts else None
+
+
+def summary_html():
+    vc = {"EQUIVALENT": "eq", "NOT EQUIVALENT": "neq"}
+    counts = {}
+    for r in SUMMARY:
+        counts[r["ardiff"]] = counts.get(r["ardiff"], 0) + 1
+    exp_known = [r for r in SUMMARY if expected(r["name"]) and r["ardiff"] in vc]
+    right = sum(1 for r in exp_known if expected(r["name"]) == r["ardiff"])
+    chips = "".join(f"<span class='chip {vc.get(k, 'unk')}'>ARDiff: {h(k)} {v}</span>" for k, v in counts.items())
+    if exp_known:
+        chips += f"<span class='chip unk'>matches expected {right}/{len(exp_known)}</span>"
+    rows = []
+    for r in SUMMARY:
+        e = expected(r["name"])
+        ok = "" if not e or r["ardiff"] not in vc else ("<span class='okm'>✓</span>" if e == r["ardiff"] else "<span class='bad'>✗</span>")
+        rows.append(f"<tr><td><a href='#{r['uid']}'>{h(r['name'])}</a></td><td><span class='chip {vc.get(r['ardiff'], 'unk')}'>{h(r['ardiff'])}</span></td>"
+                    f"<td class='num'>{r['iters'] or ''}</td><td>{h(e or '')}</td><td>{ok}</td></tr>")
+    return (f"<section class='sum'><div class='ph'>{chips}</div><div class='sumt'><table><tr><th>pair</th><th>ARDiff</th>"
+            f"<th>refinement iterations</th><th>expected (folder name)</th><th></th></tr>{''.join(rows)}</table></div></section>")
+
+
 def main():
     out, dirs = sys.argv[1], sys.argv[2:]
     out_dir = os.path.dirname(os.path.abspath(out))
@@ -312,6 +407,7 @@ def main():
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
 <style>{CSS}</style>
 <div class="wrap"><header><h1>Software Regression Visualization</h1></header>
+{summary_html()}
 {''.join(sections)}</div>"""
     open(out, "w").write(page)
     print(out)
