@@ -1,9 +1,10 @@
 # Runs ARDiff on what a push changed (EQUIVALENT / NOT EQUIVALENT + semantic difference):
-#   all mode (default, also on push): oldV/newV folders under benchmarks/ -> oldV vs newV
+#   all mode (default, also on push): oldV/newV folders under PAIRS_ROOT (examples/readable-vs-fast) -> oldV vs newV
 #     (10 folders spread over the list by default; limit 0 = all)
 #   pairs mode: only folders touched by the commit(s)
 #   methods mode: each changed method, old commit vs new commit
-# and publishes the report to GitHub Pages: index.html = report, viewers/<pair>.html = refinement process.
+# and publishes to GitHub Pages: index.html = Software Regression Visualization (unified_report.py),
+# report.html = per-method report, viewers/ = refinement viewers.
 name: ARDiff commit check
 
 on:
@@ -22,12 +23,16 @@ on:
         required: false
         default: ""
       mode:
-        description: "all = every oldV/newV folder under benchmarks/; pairs = only folders touched by the commit(s); methods = changed methods across commits"
+        description: "all = every oldV/newV folder under pairs_root; pairs = only folders touched by the commit(s); methods = changed methods across commits"
         type: choice
         options: [all, pairs, methods]
         default: all
+      pairs_root:
+        description: "all mode: folder to scan for oldV/newV pairs (e.g. benchmarks)"
+        required: false
+        default: "examples/readable-vs-fast"
       limit:
-        description: "all mode: how many folders to check, evenly spread (0 = all 142)"
+        description: "all mode: how many folders to check, evenly spread (0 = all)"
         required: false
         default: "10"
       only:
@@ -65,6 +70,7 @@ jobs:
       ONLY: ${{ inputs.only }}
       MODE: ${{ inputs.mode || 'all' }}          # push: all mode too
       LIMIT: ${{ inputs.limit || '10' }}          # push: 10 folders
+      PAIRS_ROOT: ${{ inputs.pairs_root || 'examples/readable-vs-fast' }}
       EVENT: ${{ github.event_name }}
       PUSH_BEFORE: ${{ github.event.before }}
       PUSH_AFTER: ${{ github.sha }}
@@ -123,7 +129,7 @@ jobs:
           args=(--repo "$CHECK_REPO" --out "$RUNNER_TEMP/report")
           case "$MODE" in
             pairs) args+=(--pairs) ;;
-            all)   args+=(--all-pairs --limit "$LIMIT") ;;
+            all)   args+=(--all-pairs "$PAIRS_ROOT" --limit "$LIMIT") ;;
           esac
           [ -n "$ONLY" ] && args+=(--only "$ONLY")
           # CHECK_SEL is "--range X" or "--commit X": word-split on purpose
@@ -139,9 +145,16 @@ jobs:
         run: |
           r="$RUNNER_TEMP/report"
           mkdir -p _site
-          cp "$r/report.html" _site/index.html
-          cp "$r/report.md" "$r/report.json" _site/
+          cp "$r/report.html" "$r/report.md" "$r/report.json" _site/
           [ -d "$r/viewers" ] && cp -r "$r/viewers" _site/
+          # main page: Software Regression Visualization over every pair ARDiff ran (old report stays at report.html)
+          dirs=()
+          for d in "$r"/pairs/*/; do [ -f "$d/debug.log" ] && dirs+=("${d%/}"); done
+          if [ ${#dirs[@]} -gt 0 ]; then
+            python3 refinement/commitcheck/unified_report.py _site/index.html "${dirs[@]}"
+          else
+            cp "$r/report.html" _site/index.html
+          fi
           # ARDiff inputs and logs per method, for anyone who wants the raw data
           if [ -d "$r/pairs" ]; then
             mkdir -p _site/pairs

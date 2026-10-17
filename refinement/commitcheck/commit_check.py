@@ -457,8 +457,9 @@ def write_markdown(path, label, entries):
         if e["state"] == "skipped":
             res = f"건너뜀: {e['reason']}"
         exp = expected_verdict(e["file"])
-        if exp and e.get("verdict") in ("EQUIVALENT", "NOT EQUIVALENT"):
-            res += " ✓" if e["verdict"] == exp else f" ✗ (기대: {exp})"
+        veff = "NOT EQUIVALENT" if e.get("exec_verdict") else e.get("verdict")
+        if exp and veff in ("EQUIVALENT", "NOT EQUIVALENT"):
+            res += " ✓" if veff == exp else f" ✗ (기대: {exp})"
         L.append(f"| `{e['method']}` | {e['file']} | {res} |")
     for e in entries:
         if e.get("analysis") and (e["verdict"] == "NOT EQUIVALENT" or e.get("exec_verdict")):
@@ -637,7 +638,8 @@ def write_html(path, label, entries, viewer_ok):
                      f"<div class='muted'>{h(e['file'])}{' · ' if meta else ''}{' · '.join(meta)}</div>{body}</section>")
         it = (e.get("analysis") or {}).get("iterations")
         exp = expected_verdict(e["file"])
-        match = "" if not exp or v not in ("EQUIVALENT", "NOT EQUIVALENT") else ("<span class='eq'>일치</span>" if exp == v else "<span class='neq'>불일치</span>")
+        veff = "NOT EQUIVALENT" if e.get("exec_verdict") else v      # execution evidence beats a loose EQUIVALENT
+        match = "" if not exp or veff not in ("EQUIVALENT", "NOT EQUIVALENT") else ("<span class='eq'>일치</span>" if exp == veff else "<span class='neq'>불일치</span>")
         rows.append(f"<tr data-v='{vc}'{' class=neq' if e.get('exec_verdict') else ''}><td><a href='#{cid}'>{h(e['file'])}</a></td><td class='mono'>{h(e['method'])}</td>"
                     f"<td><span class='chip {vc}'>{h(v)}</span> {extra}</td><td class='mono'>{h(exp or '')}</td><td>{match}</td><td class='mono'>{it or ''}</td></tr>")
     page = f"""<!doctype html>

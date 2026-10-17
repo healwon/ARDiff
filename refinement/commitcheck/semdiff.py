@@ -562,6 +562,25 @@ def analyze(run_dir, z3=None, jhome=None, use_z3=True, use_exec=True, params=Non
     reason = re.findall(r"Reason: (.*)", log)
     if verdict == "UNKNOWN" and reason:
         rep["reason"] = reason[-1].strip()
+    if verdict == "EQUIVALENT" and use_exec:
+        # ARDiff models some Java semantics loosely (e.g. integer division as real division):
+        # run both versions on boundary/random inputs and flag any input where they disagree
+        _, m = target_method(os.path.join(run_dir, "oldV.java"), "oldV")
+        if m:
+            params = params if params is not None else [n for _, n in m.params]
+            rep["params"] = params
+            cands = [{"inputs": t, "source": "경계값·무작위 입력"} for t in sample_inputs(m.params, [])]
+            ex = run_concrete(run_dir, cands[:400], java_home(jhome))
+            rep["execution"] = ex
+            if any(r["differs"] for r in ex.get("runs", [])):
+                rep["exec_verdict"] = "NOT EQUIVALENT"
+                rep["notes"].append("ARDiff는 EQUIVALENT로 판정했지만 실제 실행에서 결과가 다른 입력이 있음 (ARDiff의 모델링 한계)")
+                import semview
+                shown = [sc["inputs"] for sc in semview.scenarios(rep)]
+                tr = run_traces(run_dir, shown, java_home(jhome)) if shown else {}
+                if tr.get("traces"):
+                    rep["traces"] = {json.dumps(i, sort_keys=True, default=str): t for i, t in zip(shown, tr["traces"]) if t}
+        return rep
     if verdict not in ("NOT EQUIVALENT", "UNKNOWN"):
         return rep
 
@@ -603,6 +622,10 @@ def analyze(run_dir, z3=None, jhome=None, use_z3=True, use_exec=True, params=Non
         ra["paths_aligned"] = aligned
         if not aligned:
             rep["notes"].append("Z3 요약의 경로 수와 JPF 경로 수가 달라 경로 번호 대응이 정확하지 않을 수 있음")
+        for r in ra["regions"]:            # z3 leaves unconstrained inputs out of the model: any value works, show 0
+            for p_ in params:
+                if r["witness"].get(p_) is None:
+                    r["witness"][p_] = 0
         rep["regions"] = ra
         if ra["z3_errors"]:
             rep["notes"].append("z3 오류: " + " / ".join(ra["z3_errors"]))
