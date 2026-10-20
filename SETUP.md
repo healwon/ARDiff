@@ -30,7 +30,7 @@ repo의 **Settings → Pages → Build and deployment → Source**를 **GitHub A
 
 workflow 이름: **ARDiff commit check**. 기본은 **벤치마크 모드**: push할 때마다 `examples/readable-vs-fast` 아래 oldV/newV 쌍(6개)을 비교하고,
 메인 페이지에 Software Regression Visualization(`unified_report.py`)을 올립니다. 수동 실행(Run workflow)에서 `pairs_root`를 `benchmarks`로 바꾸면 원래 벤치마크를,
-`limit`으로 개수(기본 10, `0`이면 전부)를 정합니다. `pairs`는 커밋에서 바뀐 폴더만, `methods`는 커밋 이전/이후의 바뀐 메서드를 비교합니다.
+`limit`으로 개수(기본 `0` = 전부)를 정합니다. `pairs`는 커밋에서 바뀐 폴더만, `methods`는 커밋 이전/이후의 바뀐 메서드를 비교합니다.
 NOT EQUIVALENT면 어떤 입력에서 결과가 달라지는지 보여 주는 보고서를 Pages에 올립니다.
 
 - **자동**: `.java` 파일이나 `refinement/`, workflow 파일이 바뀐 커밋을 main, master, docs에 push하면 실행.

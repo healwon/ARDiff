@@ -1,6 +1,6 @@
 # Runs ARDiff on what a push changed (EQUIVALENT / NOT EQUIVALENT + semantic difference):
 #   all mode (default, also on push): oldV/newV folders under PAIRS_ROOT (examples/readable-vs-fast) -> oldV vs newV
-#     (10 folders spread over the list by default; limit 0 = all)
+#     (every folder by default; limit N = N folders spread over the list)
 #   pairs mode: only folders touched by the commit(s)
 #   methods mode: each changed method, old commit vs new commit
 # and publishes to GitHub Pages: index.html = Software Regression Visualization (unified_report.py),
@@ -34,7 +34,7 @@ on:
       limit:
         description: "all mode: how many folders to check, evenly spread (0 = all)"
         required: false
-        default: "10"
+        default: "0"
       only:
         description: "Regex to limit what is checked (folder path in pairs mode, Class.method(sig) in methods mode)"
         required: false
@@ -69,7 +69,7 @@ jobs:
       RANGE: ${{ inputs.range }}
       ONLY: ${{ inputs.only }}
       MODE: ${{ inputs.mode || 'all' }}          # push: all mode too
-      LIMIT: ${{ inputs.limit || '10' }}          # push: 10 folders
+      LIMIT: ${{ inputs.limit || '0' }}           # push: every pair under PAIRS_ROOT
       PAIRS_ROOT: ${{ inputs.pairs_root || 'examples/readable-vs-fast' }}
       EVENT: ${{ github.event_name }}
       PUSH_BEFORE: ${{ github.event.before }}
