@@ -7,22 +7,16 @@
 |---|---|---|
 | `Horner/Eq` | 같음 | 다항식을 Horner 방식으로: 곱셈 6번 → 3번 |
 | `Power4/Eq` | 같음 | `x*x*x*x` → 제곱을 두 번 (곱셈 3번 → 2번) |
-| `Total/Eq` | 같음 | 같은 곱셈을 반복하지 않고 중간값 재사용 |
 | `Clamp/NEq` | 다름 | 위쪽 경계를 먼저 검사하도록 순서 변경: `lo > hi`일 때 결과가 달라짐 |
 | `Average/NEq` | 다름 | `(a + b) / 2` → 오버플로를 피하는 `a + (b - a) / 2`: 합이 음수이고 홀수면 반올림 방향이 달라짐 |
 | `Discount/NEq` | 다름 | 고치면서 경계가 `>= 50`에서 `> 50`으로 바뀜: `qty = 50`에서만 다름 |
 | `Hoist/Eq` | 같음 | 반복문 안의 `price * rate`를 반복문 밖으로 끌어냄. 두 변경이 함께여야 성립 (#1 단독으로는 값이 다르고 #2가 되돌림) |
 | `SignSwap/Eq` | 같음 | `d`의 의미를 `b - a`로 바꾸고 마지막 줄에서 부호를 뒤집음. 두 줄 모두 혼자서는 틀림 |
 | `AbsSign/Eq` | 같음 | `x * s` → `s < 0 ? -x : x`: 앞의 `s` 계산(공통 코드)에 기대어 성립 |
-| `SkipZero/Eq` | 같음 | 반복을 0이 아니라 1부터 시작: `i = 0` 회차는 0을 더할 뿐 |
 | `OffByOne/NEq` | 다름 | 반복 범위를 고치다 `i <= n`이 되어 `n`을 한 번 더 더함 |
 | `HalveEarly/NEq` | 다름 | 마지막에 한 번 나누던 것을 매 회차 나눔: `x`가 홀수면 회차마다 1/2씩 잃음 |
 | `MulDivOrder/NEq` | 다름 | 오버플로를 피하려고 `x * 3 / 4` → `x / 4 * 3`: 나머지를 잃음 |
 | `IsOdd/NEq` | 다름 | `x % 2 != 0` → `x % 2 == 1`: Java에서 `-3 % 2`는 `-1` |
-| `TenPercent/NEq` | 다름 | `price * 9 / 10` → `price - price / 10`: 반올림 방향이 다름 |
-| `MaxInit/NEq` | 다름 | 최댓값 초기값을 첫 값 대신 0으로: 모두 음수면 틀림 |
-| `DropAbs/NEq` | 다름 | `|a - b|`의 분기를 지워 `a - b`만 남김 |
-| `SkipFirst/NEq` | 다름 | 3의 배수 세기를 `i += 3`으로 바꾸며 3부터 시작: 0을 빠뜨림 |
 | `HoistVariant/NEq` | 다름 | 반복마다 바뀌는 `price * i`를 반복문 밖으로 끌어냄 |
 | `HalfRefactor/NEq` | 다름 | 함께 바꿔야 하는 두 줄 중 한 줄만 바꿈 (`SignSwap/Eq`의 실수 버전) |
 | `PartialChange/NEq` | 다름 | 세 군데를 바꿨지만 동작을 바꾸는 건 `qty >= 10` → `qty > 10` 하나뿐 (나머지 둘은 피연산자·항 순서만 바꿈) |
@@ -46,7 +40,7 @@ ARDiff는 연속된 두 버전처럼 **구조가 거의 같은** 코드를 비�
 
 | 예제 | ARDiff | 실제 실행 (경계값·무작위 입력) |
 |---|---|---|
-| Horner, Total | EQUIVALENT | 차이 없음 |
+| Horner | EQUIVALENT | 차이 없음 |
 | Clamp | NOT EQUIVALENT | 다름 (예: `x = 51, lo = 92, hi = 0`) |
 | Average | **EQUIVALENT** | 다름 (예: `a = -100, b = -51` → -75 / -76). ARDiff가 Java `/`(0 쪽으로 버림)를 SMT `div`(내림)로 옮겨서, 내림 기준으로는 두 식이 항상 같음 |
 | Discount | **EQUIVALENT** | 다름 (`qty = 50` → 350 / 400) |
