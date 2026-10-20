@@ -17,6 +17,15 @@
 | `SkipZero/Eq` | 같음 | 반복을 0이 아니라 1부터 시작: `i = 0` 회차는 0을 더할 뿐 |
 | `OffByOne/NEq` | 다름 | 반복 범위를 고치다 `i <= n`이 되어 `n`을 한 번 더 더함 |
 | `HalveEarly/NEq` | 다름 | 마지막에 한 번 나누던 것을 매 회차 나눔: `x`가 홀수면 회차마다 1/2씩 잃음 |
+| `MulDivOrder/NEq` | 다름 | 오버플로를 피하려고 `x * 3 / 4` → `x / 4 * 3`: 나머지를 잃음 |
+| `IsOdd/NEq` | 다름 | `x % 2 != 0` → `x % 2 == 1`: Java에서 `-3 % 2`는 `-1` |
+| `TenPercent/NEq` | 다름 | `price * 9 / 10` → `price - price / 10`: 반올림 방향이 다름 |
+| `MaxInit/NEq` | 다름 | 최댓값 초기값을 첫 값 대신 0으로: 모두 음수면 틀림 |
+| `DropAbs/NEq` | 다름 | `|a - b|`의 분기를 지워 `a - b`만 남김 |
+| `SkipFirst/NEq` | 다름 | 3의 배수 세기를 `i += 3`으로 바꾸며 3부터 시작: 0을 빠뜨림 |
+| `HoistVariant/NEq` | 다름 | 반복마다 바뀌는 `price * i`를 반복문 밖으로 끌어냄 |
+| `HalfRefactor/NEq` | 다름 | 함께 바꿔야 하는 두 줄 중 한 줄만 바꿈 (`SignSwap/Eq`의 실수 버전) |
+| `PartialChange/NEq` | 다름 | 세 군데를 바꿨지만 동작을 바꾸는 건 `qty >= 10` → `qty > 10` 하나뿐 (나머지 둘은 피연산자·항 순서만 바꿈) |
 
 실행 (저장소 루트에서):
 

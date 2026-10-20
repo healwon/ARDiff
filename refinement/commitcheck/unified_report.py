@@ -83,10 +83,10 @@ def build_pair(d, idx, jhome, out_dir):
     executed = semdiff.run_concrete(d, cands[:80], jhome).get("runs", []) if cands else []
     n_exec, n_diff = len(executed), sum(r["differs"] for r in executed)
     show = [r for r in executed if r["differs"]][:8] + [r for r in executed if not r["differs"]][:4]
-    # inputs that show ARDiff is wrong: it said EQUIVALENT, the per-change analysis found an input that differs
-    # and running it confirms. Kept out of the default view.
+    # inputs ARDiff did not produce that show a difference (from the per-change analysis, confirmed by running):
+    # shown only on request. Used when none of ARDiff's own inputs differs.
     extra = []
-    if ardiff == "EQUIVALENT":
+    if n_diff == 0:      # ARDiff said EQUIVALENT, or none of its own inputs exposes the difference it reported
         xc = [{"inputs": {p_: hk["counterexample"].get(p_, 0) for p_ in params}, "source": "missed by ARDiff", "hunk": k}
               for k, hk in enumerate(pr["hunks"]) if hk.get("counterexample")]
         xr = semdiff.run_concrete(d, xc, jhome).get("runs", []) if xc else []
@@ -194,7 +194,8 @@ def build_pair(d, idx, jhome, out_dir):
     uid = f"u{idx}"
     data = {"hunks": hunks, "runs": runs, "iters": iters}
     SUMMARY.append({"uid": uid, "name": pair_name(d), "ardiff": ardiff, "iters": len(statuses)})
-    return f"""<section class="pair" id="{uid}">
+    vkey = {"EQUIVALENT": "eq", "NOT EQUIVALENT": "neq"}.get(ardiff, "unk")
+    return f"""<section class="pair" id="{uid}" data-v="{vkey}">
 <div class="ph"><h2>{h(pair_name(d))}</h2>
 <span class="chip {vcls(ardiff, 'unk')}">ARDiff: {h(ardiff)}</span></div>
 <div class="tl"><span class="muted">ARDiff refinement</span>{tl}{f"<a class='vw' href='{vrel}'>open refinement viewer</a>" if vrel else ""}</div>
@@ -215,7 +216,8 @@ function el(n,a){ var e=document.createElementNS(NS,n); for(var k in a) e.setAtt
 function marker(id, cls){ var m=el("marker",{id:id,viewBox:"0 0 8 8",refX:"7",refY:"4",markerWidth:"5",markerHeight:"5",orient:"auto-start-reverse"}); m.appendChild(el("path",{d:"M0,0 L8,4 L0,8 z","class":cls})); return m; }
 function curve(A,B,W,bendBase,cls,mk,label){
   var ra=rect(A), rb=rect(B), back=rb.top<ra.top;
-  var xa=ra.left-W.left-7, xb=rb.left-W.left-5, ya=ra.top+ra.height/2-W.top+(back?-4:4), yb=rb.top+rb.height/2-W.top+(back?4:-4);
+  var sx=wrap.scrollLeft, sy=wrap.scrollTop;   // the svg scrolls with the table: measure in content coordinates
+  var xa=ra.left-W.left-7+sx, xb=rb.left-W.left-5+sx, ya=ra.top+ra.height/2-W.top+sy+(back?-4:4), yb=rb.top+rb.height/2-W.top+sy+(back?4:-4);
   var near=!back && (+B.parentNode.dataset.row - +A.parentNode.dataset.row)===1;
   var bend=near?14:bendBase+Math.min(50,Math.abs(yb-ya)/4), cx=Math.max(3,Math.min(xa,xb)-bend);
   svg.appendChild(el("path",{d:"M"+xa+","+ya+" C"+cx+","+ya+" "+cx+","+yb+" "+xb+","+yb,"class":cls+(back?" back":""),"marker-end":"url(#"+mk+")"}));
@@ -226,7 +228,7 @@ function rowOf(side, l){ var c=cell(side,l+1); return c?+c.parentNode.dataset.ro
 function draw(){
   while(svg.firstChild) svg.removeChild(svg.firstChild);
   var W=wrap.getBoundingClientRect(); if(!W.width) return;
-  svg.setAttribute("width",W.width); svg.setAttribute("height",W.height);
+  svg.setAttribute("width",wrap.scrollWidth); svg.setAttribute("height",wrap.scrollHeight);
   var df=el("defs",{}); df.appendChild(marker("mk"+root.id+"p","lkh")); df.appendChild(marker("mk"+root.id+"f","flh")); svg.appendChild(df);
   if(st.run!==null){
     var r=D.runs[st.run];
@@ -297,7 +299,9 @@ var sm=root.querySelector(".showmiss"); if(sm) sm.addEventListener("click", func
   paint();
 });
 window.addEventListener("resize", draw); window.addEventListener("load", draw);
-if(document.fonts&&document.fonts.ready) document.fonts.ready.then(draw);
+if(document.fonts){ if(document.fonts.ready) document.fonts.ready.then(draw); if(document.fonts.addEventListener) document.fonts.addEventListener("loadingdone", draw); }
+setTimeout(draw, 400); setTimeout(draw, 1500);
+if(window.ResizeObserver) new ResizeObserver(draw).observe(wrap.querySelector("table"));
 if(window.ResizeObserver) new ResizeObserver(draw).observe(wrap);
 paint();
 """
@@ -323,7 +327,9 @@ code{font-family:var(--mono);font-size:12.5px}.muted{color:var(--muted)}.hl{colo
 .sumt{overflow-x:auto}.sumt table{border-collapse:collapse;width:100%;font-size:13px}
 .sumt th{font-weight:500;color:var(--muted);text-align:left;font-size:12px;padding:4px 10px;border-bottom:1px solid var(--rule)}
 .sumt td{padding:4px 10px;border-bottom:1px solid var(--rule);font-family:var(--mono);font-size:12.5px}.sumt td.num{text-align:right}
-.sumt a{color:inherit}.okm{color:var(--eq);font-weight:700}.bad{color:var(--neq);font-weight:700}
+.sumt a{color:inherit}
+.flt{display:flex;flex-wrap:wrap;gap:6px}.flt button{font:inherit;font-size:12px;color:var(--fg);background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:2px 10px;cursor:pointer}
+.flt button[aria-pressed="true"]{border-color:var(--fg);font-weight:600}.flt button:focus-visible{outline:2px solid var(--ctx);outline-offset:2px}.okm{color:var(--eq);font-weight:700}.bad{color:var(--neq);font-weight:700}
 .chip{font-family:var(--mono);font-size:11.5px;font-weight:600;padding:1px 9px;border-radius:99px;border:1.5px solid currentColor;white-space:nowrap}
 .chip.eq{color:var(--eq)}.chip.neq{color:var(--neq)}.chip.unk{color:var(--unk)}
 .tl{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:12px}.tl>.muted{margin-right:6px}
@@ -398,10 +404,21 @@ def summary_html():
     for r in SUMMARY:
         e = expected(r["name"])
         ok = "" if not e or r["ardiff"] not in vc else ("<span class='okm'>✓</span>" if e == r["ardiff"] else "<span class='bad'>✗</span>")
-        rows.append(f"<tr><td><a href='#{r['uid']}'>{h(r['name'])}</a></td><td><span class='chip {vc.get(r['ardiff'], 'unk')}'>{h(r['ardiff'])}</span></td>"
+        rows.append(f"<tr data-v='{vc.get(r['ardiff'], 'unk')}'><td><a href='#{r['uid']}'>{h(r['name'])}</a></td><td><span class='chip {vc.get(r['ardiff'], 'unk')}'>{h(r['ardiff'])}</span></td>"
                     f"<td class='num'>{r['iters'] or ''}</td><td>{h(e or '')}</td><td>{ok}</td></tr>")
-    return (f"<section class='sum'><div class='ph'>{chips}</div><div class='sumt'><table><tr><th>pair</th><th>ARDiff</th>"
-            f"<th>refinement iterations</th><th>expected (folder name)</th><th></th></tr>{''.join(rows)}</table></div></section>")
+    filt = ("<div class='flt' role='group' aria-label='filter by ARDiff result'>"
+            "<button type='button' data-f='' aria-pressed='true'>all</button>"
+            "<button type='button' data-f='neq' aria-pressed='false'>NOT EQUIVALENT</button>"
+            "<button type='button' data-f='eq' aria-pressed='false'>EQUIVALENT</button>"
+            + ("<button type='button' data-f='unk' aria-pressed='false'>other</button>" if any(r["ardiff"] not in vc for r in SUMMARY) else "")
+            + "</div>")
+    script = """<script>(function(){var bs=document.querySelectorAll('.flt button');
+bs.forEach(function(b){b.addEventListener('click',function(){var f=b.dataset.f;
+bs.forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false');});
+document.querySelectorAll('.sumt tr[data-v], section.pair[data-v]').forEach(function(el){el.hidden=!!f&&el.dataset.v!==f;});
+window.dispatchEvent(new Event('resize'));});});})();</script>"""
+    return (f"<section class='sum'><div class='ph'>{chips}</div>{filt}<div class='sumt'><table><tr><th>pair</th><th>ARDiff</th>"
+            f"<th>refinement iterations</th><th>expected (folder name)</th><th></th></tr>{''.join(rows)}</table></div></section>{script}")
 
 
 def main():
