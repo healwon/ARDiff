@@ -5,13 +5,14 @@ structural diff (difftastic) - old/new correspondence - execution flow (JDI trac
 counterexamples confirmed by running the code).
 
 usage: unified_report.py OUT.html PAIR_DIR...      (ARDiff runs made by ardiff-workflow.sh / commit_check.py)
-Writes OUT.html plus viewers/<pair>.html (refinement viewer) next to it.
+Writes OUT.html plus viewers/<pair>.html (refinement viewer) and raw.html (ARDiff's own output) next to it.
 """
 import html, json, os, re, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import proofrole  # noqa: E402
+import raw_report  # noqa: E402
 import semdiff  # noqa: E402
 import semview  # noqa: E402
 import slicer  # noqa: E402
@@ -227,7 +228,7 @@ def build_pair(d, idx, jhome, out_dir):
     vkey = {"EQUIVALENT": "eq", "NOT EQUIVALENT": "neq"}.get(ardiff, "unk")
     return f"""<section class="pair" id="{uid}" data-v="{vkey}">
 <div class="ph"><h2>{h(pair_name(d))}</h2>
-<span class="chip {vcls(ardiff, 'unk')}">ARDiff: {h(ardiff)}</span></div>
+<span class="chip {vcls(ardiff, 'unk')}">ARDiff: {h(ardiff)}</span><a class="rawl" href="raw.html#{uid}" target="ardiff-raw">ARDiff raw output ↗</a></div>
 <div class="tl"><span class="muted">ARDiff refinement</span>{tl}{f"<a class='vw' href='{vrel}'>open refinement viewer</a>" if vrel else ""}</div>
 <div class="cards">{''.join(cards) or "<p class='muted'>no changed statements</p>"}{f'<div class="exs">{ex_chips}</div>' if ex_chips else ""}</div>
 <div class="svw"><table><tr><th></th><th></th><th>old</th><th></th><th></th><th>new</th></tr>{''.join(trs)}</table><svg class="ov" aria-hidden="true"></svg></div>
@@ -352,7 +353,7 @@ CSS = """
 h1{font-size:22px;margin:0}.hd{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline}.pgl{color:var(--ctx);font-size:13px}h2{font-size:15px;margin:0;font-family:var(--mono);word-break:break-all}
 code{font-family:var(--mono);font-size:12.5px}.muted{color:var(--muted)}.hl{color:var(--neq)}
 .pair{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:16px;display:grid;gap:12px;min-width:0}
-.ph{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center}
+.rawl{margin-left:auto;font-size:12.5px;color:var(--ctx)}.ph{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center}
 .sum{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:16px;display:grid;gap:12px;min-width:0}
 .sumt{overflow-x:auto}.sumt table{border-collapse:collapse;width:100%;font-size:13px}
 .sumt th{font-weight:500;color:var(--muted);text-align:left;font-size:12px;padding:4px 10px;border-bottom:1px solid var(--rule)}
@@ -466,6 +467,7 @@ def main():
 {summary_html()}
 {''.join(sections)}</div>"""
     open(out, "w").write(page)
+    open(os.path.join(out_dir, "raw.html"), "w").write(raw_report.page(dirs))
     print(out)
 
 

@@ -76,6 +76,10 @@ svg.ov .fl{fill:none;stroke:var(--flow);stroke-width:1.3;opacity:.85}svg.ov .fl.
 .lite .it.u{border-color:var(--eq);color:var(--eq)}.lite .it.r{border-color:var(--neq);color:var(--neq)}
 .lite .it[aria-pressed="true"]{outline:2px solid var(--fg);outline-offset:1px}
 .lite .arr{color:var(--muted);font-size:11px}
+.lite .rawh{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center}.lite .rawh a{color:var(--flow);font-size:12px}
+.lite .rawb{font:inherit;font-size:12px;padding:1px 8px;border:1px solid var(--rule);border-radius:4px;background:none;color:var(--fg);cursor:pointer}
+.lite .rawb[aria-expanded="true"]{background:var(--flowsoft)}
+.lite pre.raw{margin:0;max-height:360px;overflow:auto;font-family:var(--mono);font-size:11.5px;line-height:1.45;padding:8px;border:1px solid var(--rule);border-radius:4px;white-space:pre}
 .svw td.abs{background:repeating-linear-gradient(135deg,var(--nofsoft) 0 6px,transparent 6px 12px)}
 .svw td.abs .st{color:var(--muted)}.svw td.abs .st::after{content:"  UF";font-family:var(--sans);font-size:10px;font-weight:600;color:var(--muted)}
 .svw td.pick{outline:2px dashed var(--fg);outline-offset:-2px}
@@ -156,7 +160,7 @@ function update() {
 }
 
 // ---------------------------------------------------------------- ARDiff-lite (z3 in the browser)
-var lite = {z3: null, loading: null, token: 0, result: null, sel: null, error: null};
+var lite = {z3: null, loading: null, token: 0, result: null, sel: null, error: null, raw: false};
 function loadScript(src) { return new Promise(function (ok, bad) { var e = document.createElement("script"); e.src = src; e.onload = ok; e.onerror = function () { bad(new Error("cannot load " + src)); }; document.head.appendChild(e); }); }
 function z3() {
   if (lite.z3) return Promise.resolve(lite.z3);
@@ -182,6 +186,24 @@ function runLite(o, n) {
     }).catch(function (e) { if (my === lite.token) { lite.error = e.message || String(e); renderLite(); } });
   }, 500);
 }
+// ARDiff-lite's own record: per iteration, the SMT-LIB query given to z3 and z3's reply (the selected iteration only, when one is)
+function rawLog() {
+  var r = lite.result; if (!r) return "";
+  return r.iterations.filter(function (it) { return lite.sel === null || it.iter === lite.sel; }).map(function (it) {
+    var s = "; ===== iteration " + it.iter + " =====\n; abstracted (shared UF): " + (it.abstracted.length ? "lines " + it.abstracted.join(", ") : "none") + "\n" +
+      it.smt + "\n; ----- z3 -----\n" + it.out + "\n";
+    if (it.vacuity) s += "; ----- loop-bound check -----\n" + it.vacuity + "\n; ----- z3 -----\n" + it.vacuityOut + "\n";
+    if (it.run) s += "; model run on the real code: old " + it.run[0] + ", new " + it.run[1] + (it.real ? " -> real difference" : " -> spurious") + "\n";
+    if (it.pick) s += "; refine: line " + it.pick + " made concrete\n";
+    return s;
+  }).join("\n") + (lite.sel === null ? "\n; verdict: " + r.verdict + (r.reason ? " (" + r.reason + ")" : "") + "\n" : "");
+}
+// the original ARDiff's output for an unedited example, on the published site (raw.html, written by unified_report.py)
+function origRaw() {
+  if (curEx === null || !EX[curEx] || cmOld.getValue() !== EX[curEx].old || cmNew.getValue() !== EX[curEx].new) return null;
+  return "raw.html#" + EX[curEx].name;
+}
+
 function renderLite() {
   var box = $("lite"), r = lite.result;
   if (lite.error) { box.innerHTML = "<div class='lh'><b>ARDiff-lite</b><span class='muted'>unavailable: " + esc(lite.error) + "</span></div>"; return; }
@@ -196,7 +218,11 @@ function renderLite() {
   box.innerHTML = "<div class='lh'><b>ARDiff-lite</b><span class='chip " + cls + "'>" + esc(r.verdict) + "</span>" +
     (r.reason ? "<span class='muted'>" + esc(r.reason) + "</span>" : "") +
     "<span class='muted' title='abstraction-refinement with z3 running in this page; a re-implementation, not the original ARDiff'>re-implemented in the browser</span></div>" +
-    "<div class='its'>" + steps + "</div>";
+    "<div class='its'>" + steps + "</div>" +
+    "<div class='rawh'><button type='button' class='rawb' aria-expanded='" + lite.raw + "'>raw z3 log</button>" +
+    (origRaw() ? "<a href='" + esc(origRaw()) + "' target='ardiff-raw'>original ARDiff raw output ↗</a>" : "") + "</div>" +
+    "<pre class='raw'" + (lite.raw ? "" : " hidden") + "></pre>";
+  box.querySelector(".rawb").addEventListener("click", function () { lite.raw = !lite.raw; renderLite(); paint(); });
   box.querySelectorAll(".it").forEach(function (b) { b.addEventListener("click", function () { lite.sel = lite.sel === +b.dataset.it ? null : +b.dataset.it; paint(); }); });
   if (r.counterexample) {
     var i = addInput(r.counterexample.inputs);
@@ -373,6 +399,7 @@ function paint() {
   if (!res || res.error) return;
   document.querySelectorAll("#tbl td.c").forEach(function (td) { td.classList.remove("fl", "norun", "dv", "sel", "abs", "pick"); var v = td.querySelector(".val"); if (v) v.textContent = ""; });
   document.querySelectorAll(".lite .it").forEach(function (b) { b.setAttribute("aria-pressed", +b.dataset.it === lite.sel ? "true" : "false"); });
+  var rp = document.querySelector(".lite pre.raw"); if (rp && lite.raw) rp.textContent = rawLog();
   if (lite.result && lite.sel !== null) {
     var itx = lite.result.iterations[lite.sel], o2n = lite.result.o2n;
     // an abstracted statement covers its lines; mark the first line of each on both sides

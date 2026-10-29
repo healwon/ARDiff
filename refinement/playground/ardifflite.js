@@ -264,10 +264,12 @@ async function analyze(oldSrc, newSrc, z3eval, onStep) {
     var so = abstract(mo.stmts, "old", maps, concrete, seen), sn = abstract(mn.stmts, "new", maps, concrete, seen);
     var q = buildQuery(mo, mn, so, sn);
     var out = (await z3eval(q.smt)).trim(), status = out.split("\n")[0].trim();
-    var rec = {iter: it, abstracted: Object.keys(seen).map(Number).sort(function (a, b) { return a - b; }), status: status, bounded: q.bounded};
+    var rec = {iter: it, abstracted: Object.keys(seen).map(Number).sort(function (a, b) { return a - b; }), status: status, bounded: q.bounded,
+               smt: q.smt, out: out};
     iters.push(rec);
     if (status === "unsat") {
-      if (q.vacuity && (await z3eval(q.vacuity)).trim().split("\n")[0] !== "sat") { verdict = "UNKNOWN"; reason = "every input runs a loop more than " + UNROLL + " times"; }
+      if (q.vacuity) { rec.vacuity = q.vacuity; rec.vacuityOut = (await z3eval(q.vacuity)).trim(); }
+      if (q.vacuity && rec.vacuityOut.split("\n")[0] !== "sat") { verdict = "UNKNOWN"; reason = "every input runs a loop more than " + UNROLL + " times"; }
       else { verdict = "EQUIVALENT"; reason = q.bounded ? "loops up to " + UNROLL + " iterations" : null; }
       break;
     }
