@@ -8,7 +8,5 @@
 | `EvenSum` | 짝수 판정을 `(i / 2) * 2 == i`로, 더하는 값을 `2 * (i / 2)`로 (조건 안에서만 같음) | `i < n` → `i <= n` (n이 짝수면 n을 더함) |
 | `Avg3` | `avg = a + b; avg = avg + c; avg = avg / 3;` 세 단계로 | `a / 3 + b / 3 + c / 3` (나머지 손실) |
 | `TaxQty` | `qty * price`, `tax = price * qty / 10`, `total = tax + total` | `tax = price / 10 * qty` (나머지 손실) |
-| `AbsDiff` | `d = b - a`, `d <= 0`, `d = 0 - d` | `d < 0` → `d < -1` (차이가 -1일 때 다름) |
+| `AbsDiff` | `d = -b + a`, `0 > d`, `d = 0 - d` (경로는 그대로, 식만 바꿈) | `d < 0` → `d < -1` (차이가 -1일 때 다름) |
 
-ARDiff는 `AbsDiff/Eq`를 NOT EQUIVALENT로 판정합니다: JPF가 경로마다 만든 중간 변수(`REAL_3` 등)를 old와 new에서 같은 이름으로 비교하는데,
-`a - b`를 `b - a`로 바꾸면 경로가 뒤바뀌어 같은 이름이 다른 값을 뜻하게 되기 때문입니다.
