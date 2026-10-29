@@ -161,7 +161,7 @@ jobs:
           fi
           # live playground (edit code in the browser; "Run ARDiff on GitHub" goes through ardiff-issue.yml)
           z3=(); [ -f "$RUNNER_TEMP/z3assets/z3-built.wasm" ] && z3=(--z3 "$RUNNER_TEMP/z3assets")
-          python3 refinement/playground/build_playground.py _site/playground.html --examples "$PAIRS_ROOT" --report "$r/report.json" --repo "$GITHUB_REPOSITORY" "${z3[@]}"
+          python3 refinement/playground/build_playground.py _site/playground.html --examples "$PAIRS_ROOT" "${z3[@]}"
           # ARDiff inputs and logs per method, for anyone who wants the raw data
           if [ -d "$r/pairs" ]; then
             mkdir -p _site/pairs

@@ -121,6 +121,11 @@ svg.ov .fl{fill:none;stroke:var(--flow);stroke-width:1.3;opacity:.85}svg.ov .fl.
 (function () {
 var EX = /*__EXAMPLES__*/[];
 var REPO = /*__REPO__*/"";
+// starting point: one method in each class, identical; edit either side
+var SKELETON = {
+  old: "public class oldV {\n    public static double snippet(int x) {\n        int r = 0;\n        r = x * 2;\n        return r;\n    }\n}\n",
+  new: "public class newV {\n    public static double snippet(int x) {\n        int r = 0;\n        r = x + x;\n        return r;\n    }\n}\n"
+};
 var remote = {}, pending = null, pollTimer = null;   // ARDiff results fetched from GitHub, keyed by the code they are for
 try { remote = JSON.parse(localStorage.getItem("srp.remote") || "{}"); } catch (e) {}
 function codeKey(o, n) { var h = 0, s = o + "\u0000" + n; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return String(h); }
@@ -256,12 +261,8 @@ function emptyState() {
 function inputText(inp) { return Object.keys(inp).map(function (k) { return k + " = " + inp[k]; }).join(", "); }
 
 function render(o, n) {
-  var ex = curEx !== null ? EX[curEx] : null, edited = !ex || ex.old !== o || ex.new !== n;
+
   var chips = [];
-  if (ex && !edited && ex.ardiff) chips.push("<span class='chip " + ({"EQUIVALENT": "eq", "NOT EQUIVALENT": "neq"}[ex.ardiff] || "unk") + "' title='precomputed by ARDiff for this example'>ARDiff: " + esc(ex.ardiff) + "</span>");
-  else if (remote[codeKey(o, n)]) { var rr = remote[codeKey(o, n)]; chips.push("<a class='chip " + ({"EQUIVALENT": "eq", "NOT EQUIVALENT": "neq"}[rr.verdict] || "unk") + "' href='" + esc(rr.url) + "' target='_blank' rel='noopener' title='ARDiff ran on GitHub Actions for exactly this code'>ARDiff: " + esc(rr.verdict) + " (#" + rr.issue + ")</a>"); }
-  else chips.push("<span class='chip unk' title='ARDiff needs a JVM, so it runs on GitHub Actions'>ARDiff: not run (edited)</span>");
-  if (REPO && (edited || !ex.ardiff) && !remote[codeKey(o, n)]) chips.push("<button type='button' class='runbtn' id='runbtn'>Run ARDiff on GitHub</button>");
   $("err").className = "err"; $("err").hidden = !res.error; $("svw").hidden = !!res.error; $("lg").hidden = !!res.error;
   if (res.error) { $("err").textContent = res.error; $("chips").innerHTML = chips.join(""); $("cards").innerHTML = ""; $("ins").innerHTML = ""; $("tbl").innerHTML = ""; $("bar").textContent = ""; clearSvg(); clearMarks(); return; }
   var nd = res.diffIdx.length, N = res.inputs.length;
@@ -412,12 +413,12 @@ function load(i) {
 window.addEventListener("load", function () {
   cmOld = mk("old"); cmNew = mk("new");
   var sel = $("ex");
-  sel.innerHTML = "<option value=''>— empty —</option>" + EX.map(function (e, i) { return "<option value='" + i + "'>" + esc(e.name) + (e.ardiff ? " — ARDiff: " + esc(e.ardiff) : "") + "</option>"; }).join("");
-  sel.addEventListener("change", function () { if (sel.value === "") { curEx = null; cmOld.setValue(""); cmNew.setValue(""); clearTimeout(timer); update(); } else load(+sel.value); });
+  sel.innerHTML = "<option value=''>— new (skeleton) —</option>" + EX.map(function (e, i) { return "<option value='" + i + "'>" + esc(e.name) + "</option>"; }).join("");
+  sel.addEventListener("change", function () { if (sel.value === "") { curEx = null; cmOld.setValue(SKELETON.old); cmNew.setValue(SKELETON.new); clearTimeout(timer); update(); } else load(+sel.value); });
   // start empty; a link like playground.html#PartialChangeNEq opens that example
   var start = null, hm = /^#(\w+)$/.exec(location.hash);
   if (hm) EX.forEach(function (e, i) { if (e.name.replace(/\W/g, "") === hm[1]) start = i; });
-  if (start !== null) { sel.value = start; load(start); } else { sel.value = ""; update(); }
+  if (start !== null) { sel.value = start; load(start); } else { sel.value = ""; cmOld.setValue(SKELETON.old); cmNew.setValue(SKELETON.new); clearTimeout(timer); update(); }
   window.addEventListener("resize", draw);
   $("svw").addEventListener("scroll", function () {});
   if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener("loadingdone", draw);
