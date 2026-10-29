@@ -298,9 +298,12 @@ function fmt(v, ret) {
 }
 
 // ---------------------------------------------------------------- inputs
-function inputSet(params, limit) {
+function inputSet(params, limit, consts) {
   limit = limit || 2500;
   var ints = [-100, -51, -50, -11, -10, -7, -5, -3, -2, -1, 0, 1, 2, 3, 5, 7, 9, 10, 11, 12, 49, 50, 51, 99, 100];
+  // constants that appear in the code, and their neighbours, are where boundaries usually are
+  (consts || []).forEach(function (c) { [c - 1, c, c + 1, -c].forEach(function (v) { if (ints.indexOf(v) < 0 && Math.abs(v) <= 1000) ints.push(v); }); });
+  ints.sort(function (x, y) { return x - y; });
   var dbls = [-100, -10.5, -2.5, -1, -0.5, 0, 0.5, 1, 2.5, 10.5, 100];
   var doms = params.map(function (p) { return p.type === "Z" ? [false, true] : p.type === "D" ? dbls : ints; });
   var total = doms.reduce(function (a, d) { return a * d.length; }, 1), out = [];
@@ -421,7 +424,15 @@ function analyze(oldSrc, newSrc) {
     if (!done) out = out.concat(put);
     return out;
   }
-  var inputs = inputSet(mo.params);
+  var consts = [];
+  (stripComments(oldSrc) + "\n" + stripComments(newSrc)).replace(/\b\d+\b(?!\.)/g, function (m) { var v = +m; if (consts.indexOf(v) < 0) consts.push(v); return m; });
+  var inputs = inputSet(mo.params, 2500, consts);
+  // a hybrid may use a variable that only the other version declares: declare it as that version does
+  function withDecls(stmts, other) {
+    var have = {}; stmts.forEach(function (s) { if (s.k === "decl") s.vars.forEach(function (v) { have[v[0]] = 1; }); });
+    var extra = other.filter(function (s) { return s.k === "decl" && s.vars.some(function (v) { return !have[v[0]]; }); });
+    return extra.concat(stmts);
+  }
   function outcome(stmts) {
     var m = {params: mo.params, ret: mo.ret, stmts: stmts};
     return inputs.map(function (inp) {
@@ -433,14 +444,18 @@ function analyze(oldSrc, newSrc) {
   res.inputs = inputs; res.base = base; res.full = full; res.diffIdx = diffIdx;
   res.unsupported = base.concat(full).filter(function (v) { return typeof v === "string" && v.indexOf("?unsupported") === 0; })[0] || null;
   res.groups = groups.map(function (g) {
-    var alone = outcome(splice(so, sn, g.io, g.in_, g.posO));
-    var without = outcome(splice(sn, so, g.in_, g.io, g.posN));
-    var bad = alone.concat(without).some(function (v) { return typeof v === "string" && v.indexOf("?unsupported") === 0; });
+    var alone = outcome(withDecls(splice(so, sn, g.io, g.in_, g.posO), sn));
+    var without = outcome(withDecls(splice(sn, so, g.in_, g.io, g.posN), so));
+    var isBad = function (xs) { return xs.some(function (v) { return typeof v === "string" && v.indexOf("?unsupported") === 0; }); };
+    var bad = isBad(alone) || isBad(without);
+    // e.g. a new declaration: it can be added alone, but the new version cannot run without it
+    var needed = !isBad(alone) && isBad(without);
     var aloneDiff = [], matters = [];
     alone.forEach(function (v, i) { if (v !== base[i]) aloneDiff.push(i); });
     without.forEach(function (v, i) { if (v !== full[i]) matters.push(i); });
     var role;
-    if (bad) role = "isolate";
+    if (needed) role = "together";
+    else if (bad) role = "isolate";
     else if (!aloneDiff.length && !matters.length) role = "none";
     else if (aloneDiff.length && !diffIdx.length) role = "undone";
     else if (aloneDiff.length) role = "changes";
@@ -451,10 +466,13 @@ function analyze(oldSrc, newSrc) {
   });
   // "undone by" / "together with": which other changes interact
   res.groups.forEach(function (g, k) {
-    if (g.role === "undone" || g.role === "together") g.with = res.groups.map(function (h, j) { return j; }).filter(function (j) { return j !== k && res.groups[j].role !== "none"; });
+    if (g.role === "undone" || g.role === "together") {
+      g.with = res.groups.map(function (h, j) { return j; }).filter(function (j) { return j !== k && res.groups[j].role !== "none"; });
+      if (!g.with.length) g.with = res.groups.map(function (h, j) { return j; }).filter(function (j) { return j !== k; });
+    }
   });
   return res;
 }
 
-root.Engine = {parseMethod: parseMethod, run: run, analyze: analyze, diffRows: diffRows, inputSet: inputSet, Unsupported: Unsupported};
+root.Engine = {parseMethod: parseMethod, run: run, analyze: analyze, diffRows: diffRows, inputSet: inputSet, Unsupported: Unsupported, lcsOps: lcsOps, stripComments: stripComments};
 })(typeof window !== "undefined" ? window : globalThis);

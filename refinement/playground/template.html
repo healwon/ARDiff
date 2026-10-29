@@ -2,6 +2,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Software Regression Playground</title>
+/*__COI__*/
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
 <style>/*__CM_CSS__*/</style>
 <style>
@@ -36,6 +37,7 @@ select:focus-visible,button:focus-visible,.ev:focus-visible,.hk:focus-visible{ou
 .chip{font-family:var(--mono);font-size:11.5px;font-weight:600;padding:1px 9px;border-radius:99px;border:1.5px solid currentColor;white-space:nowrap}
 .chip.eq{color:var(--eq)}.chip.neq{color:var(--neq)}.chip.unk{color:var(--unk)}.muted{color:var(--muted)}
 .note{font-size:12px;color:var(--muted)}
+.empty{border:1px dashed var(--rule);border-radius:8px;padding:14px 16px;color:var(--muted);font-size:13.5px}.empty code{font-family:var(--mono);font-size:12px}
 .err{border:1px solid var(--unk);color:var(--unk);border-radius:8px;padding:8px 10px;font-family:var(--mono);font-size:12.5px}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:8px;align-items:start}
 .hk{display:grid;gap:6px;background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:9px 11px;cursor:pointer}
@@ -67,6 +69,16 @@ svg.ov .fl{fill:none;stroke:var(--flow);stroke-width:1.3;opacity:.85}svg.ov .fl.
 .remote a{color:var(--ctx);font-weight:600}.remote textarea{width:100%;min-height:90px;font-family:var(--mono);font-size:11.5px;color:var(--fg);background:var(--bg);border:1px solid var(--rule);border-radius:6px}
 .runbtn{font-size:12px;border-color:var(--ctx);color:var(--ctx)}
 .lg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;color:var(--muted)}
+.lite{border:1px solid var(--rule);border-radius:8px;background:var(--panel);padding:8px 10px;display:grid;gap:6px;font-size:12.5px}
+.lite .lh{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}.lite .lh b{font-size:13px}
+.lite .its{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.lite .it{font-family:var(--mono);font-size:11.5px;padding:1px 7px;border:1px solid var(--rule);border-radius:4px;background:var(--panel);color:var(--fg);cursor:pointer}
+.lite .it.u{border-color:var(--eq);color:var(--eq)}.lite .it.r{border-color:var(--neq);color:var(--neq)}
+.lite .it[aria-pressed="true"]{outline:2px solid var(--fg);outline-offset:1px}
+.lite .arr{color:var(--muted);font-size:11px}
+.svw td.abs{background:repeating-linear-gradient(135deg,var(--nofsoft) 0 6px,transparent 6px 12px)}
+.svw td.abs .st{color:var(--muted)}.svw td.abs .st::after{content:"  UF";font-family:var(--sans);font-size:10px;font-weight:600;color:var(--muted)}
+.svw td.pick{outline:2px dashed var(--fg);outline-offset:-2px}
 .lg .k{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:5px;vertical-align:-2px}
 </style>
 
@@ -88,11 +100,12 @@ svg.ov .fl{fill:none;stroke:var(--flow);stroke-width:1.3;opacity:.85}svg.ov .fl.
     <div class="chips" id="chips"></div>
     <div class="remote" id="remote" hidden></div>
     <div id="err" class="err" hidden></div>
+    <div class="lite" id="lite" hidden></div>
     <div class="cards" id="cards"></div>
     <div class="ins" id="ins"></div>
     <div class="svw" id="svw"><table id="tbl"></table><svg class="ov" aria-hidden="true"></svg></div>
     <div class="bar" id="bar"></div>
-    <div class="lg"><span><i class="k" style="box-shadow:inset 3px 0 0 var(--brk);background:var(--brksoft)"></i>changes the result</span>
+    <div class="lg" id="lg"><span><i class="k" style="box-shadow:inset 3px 0 0 var(--brk);background:var(--brksoft)"></i>changes the result</span>
       <span><i class="k" style="box-shadow:inset 3px 0 0 var(--id);background:var(--idsoft)"></i>no effect on the result</span>
       <span><i class="k" style="box-shadow:inset 3px 0 0 var(--cmp);background:var(--cmpsoft)"></i>matters only together with other changes</span>
       <span><i class="k" style="border-top:2px solid var(--flow);height:0;width:16px;border-radius:0"></i>execution of the selected input</span>
@@ -103,6 +116,7 @@ svg.ov .fl{fill:none;stroke:var(--flow);stroke-width:1.3;opacity:.85}svg.ov .fl.
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
 <script>/*__ENGINE__*/</script>
+<script>/*__LITE__*/</script>
 <script>
 (function () {
 var EX = /*__EXAMPLES__*/[];
@@ -129,9 +143,67 @@ function schedule() { clearTimeout(timer); timer = setTimeout(update, 300); }
 
 function update() {
   var o = cmOld.getValue(), n = cmNew.getValue();
+  if (!o.trim() && !n.trim()) { res = null; emptyState(); return; }
   res = Engine.analyze(o, n);
-  st.hk = null; st.run = null;
+  st.hk = null; st.run = null; lite.sel = null;
   render(o, n);
+  runLite(o, n);
+}
+
+// ---------------------------------------------------------------- ARDiff-lite (z3 in the browser)
+var lite = {z3: null, loading: null, token: 0, result: null, sel: null, error: null};
+function loadScript(src) { return new Promise(function (ok, bad) { var e = document.createElement("script"); e.src = src; e.onload = ok; e.onerror = function () { bad(new Error("cannot load " + src)); }; document.head.appendChild(e); }); }
+function z3() {
+  if (lite.z3) return Promise.resolve(lite.z3);
+  if (!lite.loading) {
+    if (!window.crossOriginIsolated) return Promise.reject(new Error("needs a cross-origin isolated page (the GitHub Pages version)"));
+    lite.loading = loadScript("z3/z3-built.js").then(function () { return loadScript("z3/z3lite-bundle.js"); })
+      .then(function () { return window.Z3Lite.evalFactory(); }).then(function (f) { lite.z3 = f; return f; });
+  }
+  return lite.loading;
+}
+function runLite(o, n) {
+  var box = $("lite"), my = ++lite.token;
+  lite.result = null; lite.error = null;
+  if (!window.ArdiffLite || !res || res.error) { box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = "<div class='lh'><b>ARDiff-lite</b><span class='muted'>" + (lite.z3 ? "running…" : "loading z3…") + "</span></div>";
+  setTimeout(function () {
+    if (my !== lite.token) return;
+    z3().then(function (ev) {
+      if (my !== lite.token) return;
+      box.querySelector(".muted").textContent = "running…";
+      return ArdiffLite.analyze(o, n, ev).then(function (r) { if (my === lite.token) { lite.result = r; renderLite(); } });
+    }).catch(function (e) { if (my === lite.token) { lite.error = e.message || String(e); renderLite(); } });
+  }, 500);
+}
+function renderLite() {
+  var box = $("lite"), r = lite.result;
+  if (lite.error) { box.innerHTML = "<div class='lh'><b>ARDiff-lite</b><span class='muted'>unavailable: " + esc(lite.error) + "</span></div>"; return; }
+  if (!r) return;
+  var cls = {"EQUIVALENT": "eq", "NOT EQUIVALENT": "neq"}[r.verdict] || "unk";
+  var steps = r.iterations.map(function (it) {
+    var mark = it.status === "unsat" ? "u" : it.real ? "r" : "";
+    var what = it.status === "unsat" ? "UNSAT" : it.status === "sat" ? (it.real ? "SAT · real" : "SAT · spurious") : it.status.toUpperCase();
+    return "<button type='button' class='it " + mark + "' data-it='" + it.iter + "' title='" + esc(what + " — " + it.abstracted.length + " statements abstracted" + (it.model ? " — model " + inputText(it.model) : "")) + "'>" + it.iter + " " + what + "</button>" +
+      (it.pick ? "<span class='arr'>refine L" + it.pick + " →</span>" : "");
+  }).join("");
+  box.innerHTML = "<div class='lh'><b>ARDiff-lite</b><span class='chip " + cls + "'>" + esc(r.verdict) + "</span>" +
+    (r.reason ? "<span class='muted'>" + esc(r.reason) + "</span>" : "") +
+    "<span class='muted' title='abstraction-refinement with z3 running in this page; a re-implementation, not the original ARDiff'>re-implemented in the browser</span></div>" +
+    "<div class='its'>" + steps + "</div>";
+  box.querySelectorAll(".it").forEach(function (b) { b.addEventListener("click", function () { lite.sel = lite.sel === +b.dataset.it ? null : +b.dataset.it; paint(); }); });
+  if (r.counterexample) {
+    var i = addInput(r.counterexample.inputs);
+    if (runs.indexOf(i) < 0) { runs.unshift(i); renderIns(); bind(); }
+  }
+  paint();
+}
+function addInput(inp) {
+  for (var i = 0; i < res.inputs.length; i++) if (JSON.stringify(res.inputs[i]) === JSON.stringify(inp)) return i;
+  res.inputs.push(inp);
+  res.base.push(Engine.run(res.mo, inp).value); res.full.push(Engine.run(res.mn, inp).value);
+  return res.inputs.length - 1;
 }
 
 function runRemote() {
@@ -172,6 +244,15 @@ function poll() {
   }).catch(function () {});
 }
 
+function emptyState() {
+  lite.token++; $("lite").hidden = true;
+  $("chips").innerHTML = ""; $("cards").innerHTML = ""; $("ins").innerHTML = ""; $("tbl").innerHTML = ""; $("bar").textContent = "";
+  $("remote").hidden = true; $("svw").hidden = true; $("lg").hidden = true; clearSvg(); clearMarks();
+  $("err").hidden = false;
+  $("err").className = "empty";
+  $("err").innerHTML = "Write or paste an <b>old</b> and a <b>new</b> version on the left (a class with one method, e.g. <code>public static double snippet(int x) { ... }</code>), or pick an example above.";
+}
+
 function inputText(inp) { return Object.keys(inp).map(function (k) { return k + " = " + inp[k]; }).join(", "); }
 
 function render(o, n) {
@@ -181,7 +262,7 @@ function render(o, n) {
   else if (remote[codeKey(o, n)]) { var rr = remote[codeKey(o, n)]; chips.push("<a class='chip " + ({"EQUIVALENT": "eq", "NOT EQUIVALENT": "neq"}[rr.verdict] || "unk") + "' href='" + esc(rr.url) + "' target='_blank' rel='noopener' title='ARDiff ran on GitHub Actions for exactly this code'>ARDiff: " + esc(rr.verdict) + " (#" + rr.issue + ")</a>"); }
   else chips.push("<span class='chip unk' title='ARDiff needs a JVM, so it runs on GitHub Actions'>ARDiff: not run (edited)</span>");
   if (REPO && (edited || !ex.ardiff) && !remote[codeKey(o, n)]) chips.push("<button type='button' class='runbtn' id='runbtn'>Run ARDiff on GitHub</button>");
-  $("err").hidden = !res.error;
+  $("err").className = "err"; $("err").hidden = !res.error; $("svw").hidden = !!res.error; $("lg").hidden = !!res.error;
   if (res.error) { $("err").textContent = res.error; $("chips").innerHTML = chips.join(""); $("cards").innerHTML = ""; $("ins").innerHTML = ""; $("tbl").innerHTML = ""; $("bar").textContent = ""; clearSvg(); clearMarks(); return; }
   var nd = res.diffIdx.length, N = res.inputs.length;
   chips.push("<span class='chip " + (nd ? "neq" : "eq") + "' title='old and new run on " + N + " boundary and random inputs; testing, not a proof'>" +
@@ -203,10 +284,7 @@ function render(o, n) {
       "<div class='hkd'><div><span class='side'>old</span>" + lines(o, g.oldLines) + "</div><div><span class='side'>new</span>" + lines(n, g.newLines) + "</div></div>" + ev + "</div>";
   }).join("") || "<p class='muted'>no code changes</p>";
 
-  $("ins").innerHTML = "<span class='h'>inputs</span>" + runs.map(function (i) {
-    var df = res.base[i] !== res.full[i];
-    return "<span class='ev" + (df ? " df" : "") + "' role='button' tabindex='0' data-run='" + i + "'><code>" + esc(inputText(res.inputs[i])) + "</code><b>" + esc(res.base[i]) + "</b><span class='muted'>/</span><b class='" + (df ? "hl" : "") + "'>" + esc(res.full[i]) + "</b></span>";
-  }).join("");
+  renderIns();
 
   // side-by-side diff
   var d = Engine.diffRows(o, n), a = o.split("\n"), b = n.split("\n");
@@ -231,6 +309,14 @@ function render(o, n) {
   if (runs.length) select(runs[0]); else paint();
 }
 
+function renderIns() {
+  var cx = lite.result && lite.result.counterexample ? JSON.stringify(lite.result.counterexample.inputs) : null;
+  $("ins").innerHTML = "<span class='h'>inputs</span>" + runs.map(function (i) {
+    var df = res.base[i] !== res.full[i], fromLite = cx && JSON.stringify(res.inputs[i]) === cx;
+    return "<span class='ev" + (df ? " df" : "") + "' role='button' tabindex='0' data-run='" + i + "'" + (fromLite ? " title='counterexample found by ARDiff-lite'" : "") + "><code>" + esc(inputText(res.inputs[i])) + "</code><b>" + esc(res.base[i]) + "</b><span class='muted'>/</span><b class='" + (df ? "hl" : "") + "'>" + esc(res.full[i]) + "</b></span>";
+  }).join("");
+}
+
 function bind() {
   var rb = $("runbtn"); if (rb) rb.addEventListener("click", runRemote);
   document.querySelectorAll("[data-run]").forEach(function (e) {
@@ -251,7 +337,14 @@ function clearMarks() { marks.forEach(function (m) { m[0].removeLineClass(m[1], 
 
 function paint() {
   if (!res || res.error) return;
-  document.querySelectorAll("#tbl td.c").forEach(function (td) { td.classList.remove("fl", "norun", "dv", "sel"); var v = td.querySelector(".val"); if (v) v.textContent = ""; });
+  document.querySelectorAll("#tbl td.c").forEach(function (td) { td.classList.remove("fl", "norun", "dv", "sel", "abs", "pick"); var v = td.querySelector(".val"); if (v) v.textContent = ""; });
+  document.querySelectorAll(".lite .it").forEach(function (b) { b.setAttribute("aria-pressed", +b.dataset.it === lite.sel ? "true" : "false"); });
+  if (lite.result && lite.sel !== null) {
+    var itx = lite.result.iterations[lite.sel], o2n = lite.result.o2n;
+    // an abstracted statement covers its lines; mark the first line of each on both sides
+    itx.abstracted.forEach(function (l) { var c = cell("L", l), d = cell("R", o2n[l]); if (c) c.classList.add("abs"); if (d) d.classList.add("abs"); });
+    if (itx.pick) { var c = cell("L", itx.pick), d = cell("R", o2n[itx.pick]); if (c) c.classList.add("pick"); if (d) d.classList.add("pick"); }
+  }
   document.querySelectorAll(".hk").forEach(function (c) { c.setAttribute("aria-pressed", +c.dataset.hk === st.hk ? "true" : "false"); });
   document.querySelectorAll(".ev").forEach(function (c) { c.setAttribute("aria-pressed", +c.dataset.run === st.run ? "true" : "false"); });
   clearMarks();
@@ -313,20 +406,18 @@ function load(i) {
   curEx = i;
   var ex = EX[i];
   cmOld.setValue(ex.old); cmNew.setValue(ex.new);
-  try { localStorage.setItem("srp.ex", ex.name); } catch (e) {}
   clearTimeout(timer); update();
 }
 
 window.addEventListener("load", function () {
   cmOld = mk("old"); cmNew = mk("new");
   var sel = $("ex");
-  sel.innerHTML = EX.map(function (e, i) { return "<option value='" + i + "'>" + esc(e.name) + (e.ardiff ? " — ARDiff: " + esc(e.ardiff) : "") + "</option>"; }).join("");
-  sel.addEventListener("change", function () { load(+sel.value); });
-  var start = 0;
-  try { var nm = localStorage.getItem("srp.ex"); EX.forEach(function (e, i) { if (e.name === nm) start = i; }); } catch (e) {}
-  var hm = /^#(\w+)$/.exec(location.hash); if (hm) EX.forEach(function (e, i) { if (e.name.replace(/\W/g, "") === hm[1]) start = i; });
-  sel.value = start;
-  if (EX.length) load(start);
+  sel.innerHTML = "<option value=''>— empty —</option>" + EX.map(function (e, i) { return "<option value='" + i + "'>" + esc(e.name) + (e.ardiff ? " — ARDiff: " + esc(e.ardiff) : "") + "</option>"; }).join("");
+  sel.addEventListener("change", function () { if (sel.value === "") { curEx = null; cmOld.setValue(""); cmNew.setValue(""); clearTimeout(timer); update(); } else load(+sel.value); });
+  // start empty; a link like playground.html#PartialChangeNEq opens that example
+  var start = null, hm = /^#(\w+)$/.exec(location.hash);
+  if (hm) EX.forEach(function (e, i) { if (e.name.replace(/\W/g, "") === hm[1]) start = i; });
+  if (start !== null) { sel.value = start; load(start); } else { sel.value = ""; update(); }
   window.addEventListener("resize", draw);
   $("svw").addEventListener("scroll", function () {});
   if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener("loadingdone", draw);

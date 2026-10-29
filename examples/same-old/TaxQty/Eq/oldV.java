@@ -1,0 +1,11 @@
+public class oldV {
+    // readable: total with 10 percent tax
+    public static double snippet(int price, int qty) {
+        int total = 0;
+        int tax = 0;
+        total = price * qty;
+        tax = total / 10;
+        total = total + tax;
+        return total;
+    }
+}

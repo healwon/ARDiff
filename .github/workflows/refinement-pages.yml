@@ -1,5 +1,5 @@
 # Runs ARDiff on what a push changed (EQUIVALENT / NOT EQUIVALENT + semantic difference):
-#   all mode (default, also on push): oldV/newV folders under PAIRS_ROOT (examples/readable-vs-fast) -> oldV vs newV
+#   all mode (default, also on push): oldV/newV folders under PAIRS_ROOT (examples/same-old) -> oldV vs newV
 #     (every folder by default; limit N = N folders spread over the list)
 #   pairs mode: only folders touched by the commit(s)
 #   methods mode: each changed method, old commit vs new commit
@@ -30,7 +30,7 @@ on:
       pairs_root:
         description: "all mode: folder to scan for oldV/newV pairs (e.g. benchmarks)"
         required: false
-        default: "examples/readable-vs-fast"
+        default: "examples/same-old"
       limit:
         description: "all mode: how many folders to check, evenly spread (0 = all)"
         required: false
@@ -70,7 +70,7 @@ jobs:
       ONLY: ${{ inputs.only }}
       MODE: ${{ inputs.mode || 'all' }}          # push: all mode too
       LIMIT: ${{ inputs.limit || '0' }}           # push: every pair under PAIRS_ROOT
-      PAIRS_ROOT: ${{ inputs.pairs_root || 'examples/readable-vs-fast' }}
+      PAIRS_ROOT: ${{ inputs.pairs_root || 'examples/same-old' }}
       EVENT: ${{ github.event_name }}
       PUSH_BEFORE: ${{ github.event.before }}
       PUSH_AFTER: ${{ github.sha }}
@@ -141,6 +141,10 @@ jobs:
           [ $rc -eq 0 ] || [ $rc -eq 2 ] || exit $rc
           cat "$RUNNER_TEMP/report/report.md" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Build browser z3 for ARDiff-lite
+        continue-on-error: true      # without it the playground still works, only ARDiff-lite is off
+        run: refinement/playground/build_z3_assets.sh "$RUNNER_TEMP/z3assets"
+
       - name: Assemble site
         run: |
           r="$RUNNER_TEMP/report"
@@ -156,7 +160,8 @@ jobs:
             cp "$r/report.html" _site/index.html
           fi
           # live playground (edit code in the browser; "Run ARDiff on GitHub" goes through ardiff-issue.yml)
-          python3 refinement/playground/build_playground.py _site/playground.html --report "$r/report.json" --repo "$GITHUB_REPOSITORY"
+          z3=(); [ -f "$RUNNER_TEMP/z3assets/z3-built.wasm" ] && z3=(--z3 "$RUNNER_TEMP/z3assets")
+          python3 refinement/playground/build_playground.py _site/playground.html --examples "$PAIRS_ROOT" --report "$r/report.json" --repo "$GITHUB_REPOSITORY" "${z3[@]}"
           # ARDiff inputs and logs per method, for anyone who wants the raw data
           if [ -d "$r/pairs" ]; then
             mkdir -p _site/pairs
