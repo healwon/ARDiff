@@ -385,7 +385,8 @@ function hunks(oldText, newText) {
 
 function touches(stmts, lines) { var r = []; stmts.forEach(function (s, i) { if (lines.some(function (l) { return l >= s.l0 && l <= s.l1; })) r.push(i); }); return r; }
 
-function analyze(oldSrc, newSrc) {
+// opts.extra: more inputs to test (e.g. a counterexample found by ARDiff-lite)
+function analyze(oldSrc, newSrc, opts) {
   var res = {error: null};
   try { res.mo = parseMethod(oldSrc); res.mn = parseMethod(newSrc); }
   catch (e) { if (e instanceof Unsupported) { res.error = e.message; return res; } throw e; }
@@ -426,7 +427,9 @@ function analyze(oldSrc, newSrc) {
   }
   var consts = [];
   (stripComments(oldSrc) + "\n" + stripComments(newSrc)).replace(/\b\d+\b(?!\.)/g, function (m) { var v = +m; if (consts.indexOf(v) < 0) consts.push(v); return m; });
-  var inputs = inputSet(mo.params, 2500, consts);
+  var inputs = inputSet(mo.params, 2500, consts), keys = {};
+  inputs.forEach(function (x) { keys[JSON.stringify(x)] = 1; });
+  ((opts && opts.extra) || []).forEach(function (x) { if (!keys[JSON.stringify(x)]) { keys[JSON.stringify(x)] = 1; inputs.push(x); } });
   // a hybrid may use a variable that only the other version declares: declare it as that version does
   function withDecls(stmts, other) {
     var have = {}; stmts.forEach(function (s) { if (s.k === "decl") s.vars.forEach(function (v) { have[v[0]] = 1; }); });

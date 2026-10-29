@@ -225,6 +225,13 @@ function renderLite() {
   box.querySelector(".rawb").addEventListener("click", function () { lite.raw = !lite.raw; renderLite(); paint(); });
   box.querySelectorAll(".it").forEach(function (b) { b.addEventListener("click", function () { lite.sel = lite.sel === +b.dataset.it ? null : +b.dataset.it; paint(); }); });
   if (r.counterexample) {
+    // a difference the tested inputs missed: test it too, so the per-change roles account for it
+    var cj = JSON.stringify(r.counterexample.inputs);
+    if (!res.diffIdx.some(function (j) { return JSON.stringify(res.inputs[j]) === cj; })) {
+      var o = cmOld.getValue(), n = cmNew.getValue();
+      res = Engine.analyze(o, n, {extra: [r.counterexample.inputs]}); st.hk = null;
+      render(o, n);
+    }
     var i = addInput(r.counterexample.inputs);
     if (runs.indexOf(i) < 0) {
       // the counterexample takes the place of a shown input with the same coverage

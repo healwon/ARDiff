@@ -1,6 +1,6 @@
 # same old, two news
 
-다섯 개의 old마다 같은 동작인 new(`Eq`)와 다른 동작인 new(`NEq`)가 하나씩 있습니다. 같은 old에서 어떤 수정은 괜찮고 어떤 수정은 동작을 바꾸는지 나란히 볼 수 있습니다.
+여섯 개의 old마다 같은 동작인 new(`Eq`)와 다른 동작인 new(`NEq`)가 하나씩 있습니다. 같은 old에서 어떤 수정은 괜찮고 어떤 수정은 동작을 바꾸는지 나란히 볼 수 있습니다.
 
 | old | `Eq` new | `NEq` new |
 |---|---|---|
@@ -9,4 +9,6 @@
 | `Avg3` | `avg = a + b; avg = avg + c; avg = avg / 3;` 세 단계로 | `a / 3 + b / 3 + c / 3` (나머지 손실) |
 | `TaxQty` | `qty * price`, `tax = price * qty / 10`, `total = tax + total` | `tax = price / 10 * qty` (나머지 손실) |
 | `AbsDiff` | `d = -b + a`, `0 > d`, `d = 0 - d` (경로는 그대로, 식만 바꿈) | `d < 0` → `d < -1` (차이가 -1일 때 다름) |
+| `Overtime` | 보너스 조건을 `pay > 405` 대신 `hours > 40`으로 (공통 코드 `base = hours * 10; pay = base + 5`를 따라가야 같음을 앎) | `pay > 405` → `pay >= 405` (40시간에서 다름) |
 
+`Overtime`은 공통 코드를 추상화한 첫 질의에서 z3가 실제로는 나올 수 없는 `pay`/`base` 값을 고르기 때문에, ARDiff(-lite)가 여러 번 refinement를 거친 뒤에야 결론을 냅니다.
