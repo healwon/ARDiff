@@ -47,6 +47,31 @@ def src_title(src):
     return src
 
 
+def out_text(ret_old, ret_new, differs):
+    """results of one input on both versions, labelled (a bare "/" reads like division)"""
+    return (f"<span class='out'><span class='muted'>old</span> <b>{h(ret_old)}</b> "
+            f"<span class='muted'>new</span> <b class='{'hl' if differs else ''}'>{h(ret_new)}</b></span>")
+
+
+def coverage(to, tn, differs):
+    """branch coverage of one input: the line-to-line steps of its old and new traces"""
+    c = {("o",) + e for e in zip([-1] + to, to)} | {("n",) + e for e in zip([-1] + tn, tn)}
+    return c | {("differ",)} if differs else c
+
+
+def minimal_cover(covers):
+    """greedy set cover: indices of a small set of inputs covering every step any input covers;
+    inputs whose results differ win ties (and one is kept whenever any differs)"""
+    left, pick = set().union(*covers) if covers else set(), []
+    while left:
+        best = max(range(len(covers)), key=lambda i: (len(covers[i] & left), ("differ",) in covers[i]))
+        if not covers[best] & left:
+            break
+        pick.append(best)
+        left -= covers[best]
+    return pick
+
+
 def example_input(m):
     vals = {"double": 2.5, "float": 2.5, "boolean": True}
     return {n: vals.get(t, 7) for t, n in m.params}
@@ -82,7 +107,7 @@ def build_pair(d, idx, jhome, out_dir):
             add(t, f"ARDiff path ({side}) #{n + 1}")
     executed = semdiff.run_concrete(d, cands[:80], jhome).get("runs", []) if cands else []
     n_exec, n_diff = len(executed), sum(r["differs"] for r in executed)
-    show = [r for r in executed if r["differs"]][:8] + [r for r in executed if not r["differs"]][:4]
+    show = list(executed)
     # inputs ARDiff did not produce that show a difference (from the per-change analysis, confirmed by running):
     # shown only on request. Used when none of ARDiff's own inputs differs.
     extra = []
@@ -93,7 +118,7 @@ def build_pair(d, idx, jhome, out_dir):
         extra = [dict(r, hidden=True) for r in xr if r["differs"]]
     show += extra
     traces = semdiff.run_traces(d, [r["inputs"] for r in show], jhome).get("traces", []) if show else []
-    runs = []
+    runs, cover = [], []
     for j, r in enumerate(show):
         t = traces[j] if j < len(traces) else None
         if not t:
@@ -104,6 +129,11 @@ def build_pair(d, idx, jhome, out_dir):
                      "to": to, "tn": tn, "so": slicer.dynamic_slice(a, to), "sn": slicer.dynamic_slice(b, tn),
                      "ret_old": t["old"].get("ret"), "ret_new": t["new"].get("ret"),
                      "cut": bool(t["old"].get("truncated") or t["new"].get("truncated"))})
+        cover.append(coverage(to, tn, r["differs"]))
+    keep = minimal_cover([c for r, c in zip(runs, cover) if not r["hidden"]])
+    vis = [j for j, r in enumerate(runs) if not r["hidden"]]
+    keep = sorted((vis[i] for i in keep), key=lambda j: not runs[j]["differs"])
+    runs = [runs[j] for j in keep] + [r for r in runs if r["hidden"]]
 
     picked, statuses = proofrole.refinement_steps(d, a)
     iters = [{"i": i, "status": s, "lines": sorted(l for l, it in picked.items() if it == i)} for i, s in enumerate(statuses)]
@@ -162,7 +192,7 @@ def build_pair(d, idx, jhome, out_dir):
             r = runs[j]
             ev.append(f"<span class='ev run{' hid df' if r['hidden'] else ''}' role='button' tabindex='0' data-act='run' data-run='{j}' title='{h(src_title(r['src']))}'"
                       f"{' hidden' if r['hidden'] else ''}>{'<span class=evk>missed by ARDiff</span>' if r['hidden'] else ''}"
-                      f"<code>{h(r['label'])}</code><b>{h(r['ret_old'])}</b><span class='muted'>/</span><b class='hl'>{h(r['ret_new'])}</b></span>")
+                      f"<code>{h(r['label'])}</code>{out_text(r['ret_old'], r['ret_new'], True)}</span>")
         tags = []
         if hk.get("bounded"):
             tags.append(f"<span class='tag'>loops ≤ {hk['bounded']}</span>")
@@ -179,14 +209,14 @@ def build_pair(d, idx, jhome, out_dir):
 <div class="hkd"><div><span class="side">old</span>{code_lines(hk['old'])}</div><div><span class="side">new</span>{code_lines(hk['new'])}</div></div>
 {f'<div class="evs">{"".join(ev)}</div>' if ev else ""}</div>""")
     ex_chips = "".join(f"<span class='ev run{' df' if runs[j]['differs'] else ''}' role='button' tabindex='0' data-act='run' data-run='{j}' title='{h(src_title(runs[j]['src']))}'>"
-                       f"<code>{h(runs[j]['label'])}</code><b>{h(runs[j]['ret_old'])}</b><span class='muted'>/</span><b class='{'hl' if runs[j]['differs'] else ''}'>{h(runs[j]['ret_new'])}</b></span>"
+                       f"<code>{h(runs[j]['label'])}</code>{out_text(runs[j]['ret_old'], runs[j]['ret_new'], runs[j]['differs'])}</span>"
                        for j in example_runs)
     if ex_chips:
         ex_chips = f"<span class='exh'>Inputs</span>{ex_chips}"
     if hidden_runs:
         hid = "".join(f"<span class='ev run hid df' hidden role='button' tabindex='0' data-act='run' data-run='{j}' title='per-change counterexample, not produced by ARDiff'>"
-                      f"<span class='evk'>missed by ARDiff</span><code>{h(runs[j]['label'])}</code><b>{h(runs[j]['ret_old'])}</b>"
-                      f"<span class='muted'>/</span><b class='hl'>{h(runs[j]['ret_new'])}</b></span>" for j in hidden_runs)
+                      f"<span class='evk'>missed by ARDiff</span><code>{h(runs[j]['label'])}</code>"
+                      f"{out_text(runs[j]['ret_old'], runs[j]['ret_new'], True)}</span>" for j in hidden_runs)
         ex_chips += (f"<button type='button' class='showmiss' aria-pressed='false'>show inputs ARDiff missed ({len(hidden_runs)})</button>{hid}")
     tl = "".join(f"<button type='button' class='it {'ok' if it['status'] == 'UNSATISFIABLE' else ''}' data-it='{it['i']}' "
                  f"title='{h(it['status'])}'>{it['i']}</button>" for it in iters)
@@ -265,7 +295,7 @@ function paint(){
     if(dv<0 && r.ret_old!==r.ret_new) root.querySelectorAll("td.c.fl.chg").forEach(function(td){ td.classList.add("dv"); });
     if(dv>=0){ var x=cell("L",r.to[dv]+1), y=cell("R",r.tn[dv]+1); if(x) x.classList.add("dv"); if(y) y.classList.add("dv"); }
     if(r.hunk!==null){ var hk=D.hunks[r.hunk]; hk.ol.forEach(function(l){ var c=cell("L",l); if(c){c.classList.add("selc"); c.dataset.role=hk.role;} }); hk.nl.forEach(function(l){ var c=cell("R",l); if(c){c.classList.add("selc"); c.dataset.role=hk.role;} }); }
-    mode.innerHTML="<b>"+r.src+"</b> "+r.label+" &nbsp; old <b>"+r.ret_old+"</b> / new <b>"+r.ret_new+"</b>";
+    mode.innerHTML="<b>"+r.src+"</b> "+r.label+" &nbsp; <span class='muted'>old</span> <b>"+r.ret_old+"</b> <span class='muted'>new</span> <b"+(r.differs?" class='hl'":"")+">"+r.ret_new+"</b>";
     tg.hidden=false; tg.textContent=st.all?"steps that reach the result":"all steps";
   } else if(st.it!==null){
     var it=D.iters[st.it];

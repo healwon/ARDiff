@@ -50,7 +50,7 @@ select:focus-visible,button:focus-visible,.ev:focus-visible,.hk:focus-visible{ou
 .tag.changes{border-color:var(--brk);color:var(--brk)}.tag.none{border-color:var(--id);color:var(--id)}.tag.undone,.tag.together{border-color:var(--cmp);color:var(--cmp)}
 .ins{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.ins .h{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-right:2px}
 .ev{display:inline-flex;gap:8px;align-items:center;border-radius:4px;padding:2px 8px;font-family:var(--mono);font-size:12px;background:var(--flowsoft);box-shadow:inset 3px 0 0 var(--flow);cursor:pointer}
-.ev.df{box-shadow:inset 3px 0 0 var(--neq)}.ev[aria-pressed="true"]{outline:2px solid var(--flow);outline-offset:-1px}.ev .hl{color:var(--neq)}
+.ev.df{box-shadow:inset 3px 0 0 var(--neq)}.ev[aria-pressed="true"]{outline:2px solid var(--flow);outline-offset:-1px}.ev .hl,.out .hl{color:var(--neq)}
 .svw{position:relative;overflow:auto;border:1px solid var(--rule);border-radius:8px;background:var(--panel);max-height:70vh}
 .svw table{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px}
 .svw th{font-family:var(--sans);font-size:11.5px;color:var(--muted);font-weight:500;text-align:left;padding:4px 8px;border-bottom:1px solid var(--rule);position:sticky;top:0;background:var(--panel);z-index:1}
@@ -132,7 +132,7 @@ function codeKey(o, n) { var h = 0, s = o + "\u0000" + n; for (var i = 0; i < s.
 var $ = function (id) { return document.getElementById(id); };
 var esc = function (s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); };
 var LABEL = {changes: "changes the result", none: "no effect on the result", undone: "changes the result alone — restored by", together: "matters only together with", isolate: "cannot be tried alone"};
-var cmOld, cmNew, res = null, st = {hk: null, run: null}, runs = [], timer = null, curEx = null, marks = [];
+var cmOld, cmNew, res = null, st = {hk: null, run: null}, runs = [], cov = {}, timer = null, curEx = null, marks = [];
 
 function mk(id) {
   var ta = $(id);
@@ -200,7 +200,12 @@ function renderLite() {
   box.querySelectorAll(".it").forEach(function (b) { b.addEventListener("click", function () { lite.sel = lite.sel === +b.dataset.it ? null : +b.dataset.it; paint(); }); });
   if (r.counterexample) {
     var i = addInput(r.counterexample.inputs);
-    if (runs.indexOf(i) < 0) { runs.unshift(i); renderIns(); bind(); }
+    if (runs.indexOf(i) < 0) {
+      // the counterexample takes the place of a shown input with the same coverage
+      cov = {}; var s = sig(i);
+      runs = runs.filter(function (j) { return sig(j) !== s; }); runs.unshift(i); renderIns(); bind();
+      if (runs.indexOf(st.run) < 0) st.run = i;
+    }
   }
   paint();
 }
@@ -271,11 +276,7 @@ function render(o, n) {
   if (res.unsupported) chips.push("<span class='chip unk'>" + esc(res.unsupported.replace("?unsupported: ", "")) + "</span>");
   $("chips").innerHTML = chips.join("");
 
-  // inputs to show: differing ones first (one per distinct pair of results), then a couple that agree
-  runs = []; var seen = {};
-  res.diffIdx.forEach(function (i) { var k = res.base[i] + "|" + res.full[i]; if (!seen[k] && runs.length < 6) { seen[k] = 1; runs.push(i); } });
-  for (var i = 0, c = 0; i < N && c < (nd ? 1 : 3); i += Math.max(1, Math.floor(N / 7))) if (res.diffIdx.indexOf(i) < 0) { runs.push(i); c++; }
-  res.groups.forEach(function (g) { if (g.example !== undefined && runs.indexOf(g.example) < 0) runs.push(g.example); });
+  runs = minimalRuns();
 
   $("cards").innerHTML = res.groups.map(function (g, k) {
     var lines = function (src, ls) { var a = src.split("\n"); return ls.length ? ls.map(function (l) { return "<code>" + esc(a[l - 1].trim()) + "</code>"; }).join("<br>") : "<span class='muted'>(none)</span>"; };
@@ -310,11 +311,43 @@ function render(o, n) {
   if (runs.length) select(runs[0]); else paint();
 }
 
+// branch coverage of one input: the line-to-line steps it takes in old and in new
+function coverage(i) {
+  if (cov[i]) return cov[i];
+  var c = {}, add = function (side, t) { for (var k = 0; k < t.length; k++) c[side + (k ? t[k - 1] : "in") + ">" + t[k]] = 1; };
+  try { add("o", Engine.run(res.mo, res.inputs[i], {trace: true}).trace); add("n", Engine.run(res.mn, res.inputs[i], {trace: true}).trace); } catch (e) { }
+  if (res.base[i] !== res.full[i]) c.differ = 1;
+  return cov[i] = c;
+}
+function sig(i) { return Object.keys(coverage(i)).sort().join(" "); }
+
+// smallest set of inputs (greedy set cover) that together cover every step any tested input covers;
+// inputs whose results differ win ties, and at least one is kept when any exists
+function minimalRuns() {
+  cov = {};
+  var left = {}, pick = [], N = res.inputs.length, i, e;
+  for (i = 0; i < N; i++) for (e in coverage(i)) left[e] = 1;
+  while (Object.keys(left).length) {
+    var best = -1, gain = 0;
+    for (i = 0; i < N; i++) {
+      var g = 0; for (e in coverage(i)) if (left[e]) g++;
+      if (g > gain || (g && g === gain && !coverage(best).differ && coverage(i).differ)) { best = i; gain = g; }
+    }
+    if (best < 0) break;
+    pick.push(best); for (e in coverage(best)) delete left[e];
+  }
+  return pick.sort(function (a, b) { return (res.base[b] !== res.full[b]) - (res.base[a] !== res.full[a]); });
+}
+
+function outText(o, n, df) {
+  return "<span class='out'><span class='muted'>old</span> <b>" + esc(o) + "</b> <span class='muted'>new</span> <b class='" + (df ? "hl" : "") + "'>" + esc(n) + "</b></span>";
+}
+
 function renderIns() {
   var cx = lite.result && lite.result.counterexample ? JSON.stringify(lite.result.counterexample.inputs) : null;
   $("ins").innerHTML = "<span class='h'>inputs</span>" + runs.map(function (i) {
     var df = res.base[i] !== res.full[i], fromLite = cx && JSON.stringify(res.inputs[i]) === cx;
-    return "<span class='ev" + (df ? " df" : "") + "' role='button' tabindex='0' data-run='" + i + "'" + (fromLite ? " title='counterexample found by ARDiff-lite'" : "") + "><code>" + esc(inputText(res.inputs[i])) + "</code><b>" + esc(res.base[i]) + "</b><span class='muted'>/</span><b class='" + (df ? "hl" : "") + "'>" + esc(res.full[i]) + "</b></span>";
+    return "<span class='ev" + (df ? " df" : "") + "' role='button' tabindex='0' data-run='" + i + "'" + (fromLite ? " title='counterexample found by ARDiff-lite'" : "") + "><code>" + esc(inputText(res.inputs[i])) + "</code>" + outText(res.base[i], res.full[i], df) + "</span>";
   }).join("");
 }
 
@@ -373,7 +406,7 @@ function paint() {
   var dv = -1; for (var i = 0; i < Math.min(ro.trace.length, rn.trace.length); i++) if (rowOf("L", ro.trace[i]) !== rowOf("R", rn.trace[i])) { dv = i; break; }
   if (dv >= 0) { var x = cell("L", ro.trace[dv]), y = cell("R", rn.trace[dv]); if (x) x.classList.add("dv"); if (y) y.classList.add("dv"); }
   else if (ro.value !== rn.value) document.querySelectorAll("#tbl td.c.fl.chg").forEach(function (td) { td.classList.add("dv"); });
-  bar.innerHTML = "<b>" + esc(inputText(inp)) + "</b> &nbsp; old <b>" + esc(ro.value) + "</b> / new <b>" + esc(rn.value) + "</b>" + (ro.value !== rn.value ? " &nbsp; <span style='color:var(--neq)'>differ</span>" : " &nbsp; <span class='muted'>same</span>");
+  bar.innerHTML = "<b>" + esc(inputText(inp)) + "</b> &nbsp; " + outText(ro.value, rn.value, ro.value !== rn.value) + (ro.value !== rn.value ? " &nbsp; <span style='color:var(--neq)'>differ</span>" : " &nbsp; <span class='muted'>same</span>");
   draw();
 }
 
