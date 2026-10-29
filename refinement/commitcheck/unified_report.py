@@ -463,7 +463,7 @@ def main():
 <title>Software Regression Visualization</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
 <style>{CSS}</style>
-<div class="wrap"><header class="hd"><h1>Software Regression Visualization</h1><a class="pgl" href="playground.html">open the playground →</a></header>
+<div class="wrap"><header class="hd"><h1>Software Regression Visualization</h1><a class="pgl" href="playground.html">open the playground →</a><a class="pgl" href="raw.html">raw output only →</a></header>
 {summary_html()}
 {''.join(sections)}</div>"""
     open(out, "w").write(page)

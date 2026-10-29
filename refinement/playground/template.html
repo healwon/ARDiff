@@ -83,6 +83,14 @@ svg.ov .fl{fill:none;stroke:var(--flow);stroke-width:1.3;opacity:.85}svg.ov .fl.
 .svw td.abs{background:repeating-linear-gradient(135deg,var(--nofsoft) 0 6px,transparent 6px 12px)}
 .svw td.abs .st{color:var(--muted)}.svw td.abs .st::after{content:"  UF";font-family:var(--sans);font-size:10px;font-weight:600;color:var(--muted)}
 .svw td.pick{outline:2px dashed var(--fg);outline-offset:-2px}
+.top .mode{display:inline-flex;border:1px solid var(--rule);border-radius:5px;overflow:hidden}
+.top .mode button{font:inherit;font-size:12px;padding:3px 10px;border:0;background:var(--panel);color:var(--fg);cursor:pointer}
+.top .mode button+button{border-left:1px solid var(--rule)}.top .mode button[aria-pressed="true"]{background:var(--flowsoft);font-weight:600}
+.rawtests{display:none;margin:0;max-height:70vh;overflow:auto;font-family:var(--mono);font-size:11.5px;line-height:1.45;padding:8px 10px;border:1px solid var(--rule);border-radius:8px;background:var(--panel)}
+/* raw mode: only what the analyses printed, no visualization */
+body.rawmode #chips,body.rawmode #cards,body.rawmode #ins,body.rawmode #svw,body.rawmode #bar,body.rawmode #lg,body.rawmode .lite .rawb{display:none}
+body.rawmode .rawtests{display:block}body.rawmode .lite pre.raw{max-height:70vh}
+body.rawmode .CodeMirror [class*="ln-"]{background:none}
 .lg .k{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:5px;vertical-align:-2px}
 </style>
 
@@ -92,6 +100,7 @@ svg.ov .fl{fill:none;stroke:var(--flow);stroke-width:1.3;opacity:.85}svg.ov .fl.
   <select id="ex"></select>
   <span class="sp"></span>
   <span class="note">edit either version — the analysis on the right updates as you type</span>
+  <span class="mode" role="group" aria-label="view"><button type="button" data-mode="visual" aria-pressed="true">visual</button><button type="button" data-mode="raw" aria-pressed="false">raw output</button></span>
 </div>
 <div class="main">
   <div class="left">
@@ -109,6 +118,7 @@ svg.ov .fl{fill:none;stroke:var(--flow);stroke-width:1.3;opacity:.85}svg.ov .fl.
     <div class="ins" id="ins"></div>
     <div class="svw" id="svw"><table id="tbl"></table><svg class="ov" aria-hidden="true"></svg></div>
     <div class="bar" id="bar"></div>
+    <pre class="rawtests" id="rawtests"></pre>
     <div class="lg" id="lg"><span><i class="k" style="box-shadow:inset 3px 0 0 var(--brk);background:var(--brksoft)"></i>changes the result</span>
       <span><i class="k" style="box-shadow:inset 3px 0 0 var(--id);background:var(--idsoft)"></i>no effect on the result</span>
       <span><i class="k" style="box-shadow:inset 3px 0 0 var(--cmp);background:var(--cmpsoft)"></i>matters only together with other changes</span>
@@ -160,7 +170,24 @@ function update() {
 }
 
 // ---------------------------------------------------------------- ARDiff-lite (z3 in the browser)
-var lite = {z3: null, loading: null, token: 0, result: null, sel: null, error: null, raw: false};
+var lite = {z3: null, loading: null, token: 0, result: null, sel: null, error: null, raw: false}, rawMode = false;
+function showRaw() { return lite.raw || rawMode; }
+function setMode(m) {
+  rawMode = m === "raw";
+  document.body.classList.toggle("rawmode", rawMode);
+  document.querySelectorAll(".top .mode button").forEach(function (b) { b.setAttribute("aria-pressed", b.dataset.mode === m ? "true" : "false"); });
+  try { localStorage.setItem("pg-mode", m); } catch (e) { }
+  renderLite(); renderRawTests(); paint();
+}
+// every tested input with both results, as plain text (raw mode)
+function renderRawTests() {
+  var el = $("rawtests"); if (!el) return;
+  if (!rawMode || !res || res.error) { el.textContent = res && res.error ? res.error : ""; return; }
+  var rows = res.inputs.map(function (inp, i) { return {i: i, d: res.base[i] !== res.full[i]}; });
+  rows.sort(function (a, b) { return b.d - a.d || a.i - b.i; });
+  el.textContent = "; concrete runs of the real code: " + res.inputs.length + " inputs, " + res.diffIdx.length + " differ (listed first)\n" +
+    rows.map(function (r) { return inputText(res.inputs[r.i]) + "\t old " + res.base[r.i] + "\t new " + res.full[r.i] + (r.d ? "\t DIFFER" : ""); }).join("\n");
+}
 function loadScript(src) { return new Promise(function (ok, bad) { var e = document.createElement("script"); e.src = src; e.onload = ok; e.onerror = function () { bad(new Error("cannot load " + src)); }; document.head.appendChild(e); }); }
 function z3() {
   if (lite.z3) return Promise.resolve(lite.z3);
@@ -221,7 +248,7 @@ function renderLite() {
     "<div class='its'>" + steps + "</div>" +
     "<div class='rawh'><button type='button' class='rawb' aria-expanded='" + lite.raw + "'>raw z3 log</button>" +
     (origRaw() ? "<a href='" + esc(origRaw()) + "' target='ardiff-raw'>original ARDiff raw output ↗</a>" : "") + "</div>" +
-    "<pre class='raw'" + (lite.raw ? "" : " hidden") + "></pre>";
+    "<pre class='raw'" + (showRaw() ? "" : " hidden") + "></pre>";
   box.querySelector(".rawb").addEventListener("click", function () { lite.raw = !lite.raw; renderLite(); paint(); });
   box.querySelectorAll(".it").forEach(function (b) { b.addEventListener("click", function () { lite.sel = lite.sel === +b.dataset.it ? null : +b.dataset.it; paint(); }); });
   if (r.counterexample) {
@@ -236,7 +263,7 @@ function renderLite() {
     if (runs.indexOf(i) < 0) {
       // the counterexample takes the place of a shown input with the same coverage
       cov = {}; var s = sig(i);
-      runs = runs.filter(function (j) { return sig(j) !== s; }); runs.unshift(i); renderIns(); bind();
+      runs = runs.filter(function (j) { return sig(j) !== s; }); runs.unshift(i); renderIns(); renderRawTests(); bind();
       if (runs.indexOf(st.run) < 0) st.run = i;
     }
   }
@@ -289,7 +316,7 @@ function poll() {
 
 function emptyState() {
   lite.token++; $("lite").hidden = true;
-  $("chips").innerHTML = ""; $("cards").innerHTML = ""; $("ins").innerHTML = ""; $("tbl").innerHTML = ""; $("bar").textContent = "";
+  $("chips").innerHTML = ""; $("cards").innerHTML = ""; $("ins").innerHTML = ""; $("tbl").innerHTML = ""; $("bar").textContent = ""; $("rawtests").textContent = "";
   $("remote").hidden = true; $("svw").hidden = true; $("lg").hidden = true; clearSvg(); clearMarks();
   $("err").hidden = false;
   $("err").className = "empty";
@@ -302,7 +329,7 @@ function render(o, n) {
 
   var chips = [];
   $("err").className = "err"; $("err").hidden = !res.error; $("svw").hidden = !!res.error; $("lg").hidden = !!res.error;
-  if (res.error) { $("err").textContent = res.error; $("chips").innerHTML = chips.join(""); $("cards").innerHTML = ""; $("ins").innerHTML = ""; $("tbl").innerHTML = ""; $("bar").textContent = ""; clearSvg(); clearMarks(); return; }
+  if (res.error) { $("err").textContent = res.error; $("chips").innerHTML = chips.join(""); $("cards").innerHTML = ""; $("ins").innerHTML = ""; $("tbl").innerHTML = ""; $("bar").textContent = ""; clearSvg(); clearMarks(); renderRawTests(); return; }
   var nd = res.diffIdx.length, N = res.inputs.length;
   chips.push("<span class='chip " + (nd ? "neq" : "eq") + "' title='old and new run on " + N + " boundary and random inputs; testing, not a proof'>" +
              (nd ? nd + " of " + N + " inputs differ" : "same on " + N + " inputs") + "</span>");
@@ -319,7 +346,7 @@ function render(o, n) {
       "<div class='hkd'><div><span class='side'>old</span>" + lines(o, g.oldLines) + "</div><div><span class='side'>new</span>" + lines(n, g.newLines) + "</div></div>" + ev + "</div>";
   }).join("") || "<p class='muted'>no code changes</p>";
 
-  renderIns();
+  renderIns(); renderRawTests();
 
   // side-by-side diff
   var d = Engine.diffRows(o, n), a = o.split("\n"), b = n.split("\n");
@@ -406,7 +433,7 @@ function paint() {
   if (!res || res.error) return;
   document.querySelectorAll("#tbl td.c").forEach(function (td) { td.classList.remove("fl", "norun", "dv", "sel", "abs", "pick"); var v = td.querySelector(".val"); if (v) v.textContent = ""; });
   document.querySelectorAll(".lite .it").forEach(function (b) { b.setAttribute("aria-pressed", +b.dataset.it === lite.sel ? "true" : "false"); });
-  var rp = document.querySelector(".lite pre.raw"); if (rp && lite.raw) rp.textContent = rawLog();
+  var rp = document.querySelector(".lite pre.raw"); if (rp && showRaw()) rp.textContent = rawLog();
   if (lite.result && lite.sel !== null) {
     var itx = lite.result.iterations[lite.sel], o2n = lite.result.o2n;
     // an abstracted statement covers its lines; mark the first line of each on both sides
@@ -478,6 +505,8 @@ function load(i) {
 }
 
 window.addEventListener("load", function () {
+  document.querySelectorAll(".top .mode button").forEach(function (b) { b.addEventListener("click", function () { setMode(b.dataset.mode); }); });
+  try { if (localStorage.getItem("pg-mode") === "raw") { rawMode = true; document.body.classList.add("rawmode"); document.querySelectorAll(".top .mode button").forEach(function (b) { b.setAttribute("aria-pressed", b.dataset.mode === "raw" ? "true" : "false"); }); } } catch (e) { }
   cmOld = mk("old"); cmNew = mk("new");
   var sel = $("ex");
   sel.innerHTML = "<option value=''>— new (skeleton) —</option>" + EX.map(function (e, i) { return "<option value='" + i + "'>" + esc(e.name) + "</option>"; }).join("");
