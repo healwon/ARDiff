@@ -99,8 +99,12 @@ function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return {"&"
 function show(uid) {
   // by page id (u3) or by example name (Grade/NEq, as the playground links)
   uid = decodeURIComponent(uid);
-  cur = DATA.filter(function (p) { return p.uid === uid || p.name === uid || p.name.slice(-uid.length - 1) === "/" + uid; })[0] || DATA[0];
-  if (!cur) return;
+  cur = DATA.filter(function (p) { return p.uid === uid || p.name === uid || p.name.slice(-uid.length - 1) === "/" + uid; })[0] || (uid ? null : DATA[0]);
+  if (!cur) {
+    document.getElementById("vd").textContent = ""; document.getElementById("vd").className = "chip"; document.getElementById("files").innerHTML = "";
+    document.getElementById("fn").textContent = uid; document.getElementById("txt").textContent = DATA.length ? "ARDiff has not been run on " + uid + " for this page." : "(no ARDiff runs)";
+    return;
+  }
   document.getElementById("pick").value = cur.uid;
   var vd = document.getElementById("vd"); vd.textContent = "ARDiff: " + cur.verdict; vd.className = "chip " + cls(cur.verdict);
   document.getElementById("files").innerHTML = cur.groups.map(function (g, gi) {

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Build the single-file playground: template + engine + CodeMirror CSS + examples (+ ARDiff verdicts).
 
-usage: build_playground.py OUT.html [--examples DIR] [--report report.json ...]
-  --examples  folder with <name>/<Eq|NEq>/{oldV,newV}.java (default: <repo>/examples/readable-vs-fast)
+usage: build_playground.py OUT.html [--examples [LABEL=]DIR ...] [--report report.json ...]
+  --examples  folder with <name>/<Eq|NEq>/{oldV,newV}.java, repeatable; each is a group in the example menu
+              (default: <repo>/examples/same-old). Examples of the second and later folders are named LABEL/<name>/<kind>
   --report    commit_check report.json files; their ARDiff verdicts are shown for the matching examples
 """
 import argparse, json, os
@@ -14,7 +15,7 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
-    ap.add_argument("--examples", default=os.path.join(REPO, "examples", "same-old"))
+    ap.add_argument("--examples", action="append", default=[])
     ap.add_argument("--report", action="append", default=[])
     ap.add_argument("--repo", default="", help="owner/name for the 'Run ARDiff on GitHub' button (issue-based runs)")
     ap.add_argument("--z3", default="", help="folder with the browser z3 assets (build_z3_assets.sh); copied next to OUT as z3/ to enable ARDiff-lite")
@@ -30,18 +31,21 @@ def main():
             pass
 
     examples = []
-    for name in sorted(os.listdir(a.examples)):
-        d = os.path.join(a.examples, name)
-        if not os.path.isdir(d):
-            continue
-        for kind in sorted(os.listdir(d)):
-            p = os.path.join(d, kind)
-            if os.path.exists(os.path.join(p, "oldV.java")) and os.path.exists(os.path.join(p, "newV.java")):
-                examples.append({"name": f"{name}/{kind}", "old": open(os.path.join(p, "oldV.java")).read(),
-                                 "new": open(os.path.join(p, "newV.java")).read(),
-                                 "ardiff": verdicts.get(f"{name}/{kind}")})
-    # NEq first: the interesting ones
-    examples.sort(key=lambda e: (not e["name"].endswith("/NEq"), e["name"]))
+    for gi, spec in enumerate(a.examples or [os.path.join(REPO, "examples", "same-old")]):
+        label, root = spec.split("=", 1) if "=" in spec else (os.path.basename(os.path.normpath(spec)), spec)
+        group = []
+        for name in sorted(os.listdir(root)):
+            d = os.path.join(root, name)
+            if not os.path.isdir(d):
+                continue
+            for kind in sorted(os.listdir(d)):
+                p = os.path.join(d, kind)
+                if os.path.exists(os.path.join(p, "oldV.java")) and os.path.exists(os.path.join(p, "newV.java")):
+                    group.append({"name": (f"{label}/" if gi else "") + f"{name}/{kind}", "group": label,
+                                  "old": open(os.path.join(p, "oldV.java")).read(), "new": open(os.path.join(p, "newV.java")).read(),
+                                  "ardiff": verdicts.get(f"{name}/{kind}")})
+        # NEq first: the interesting ones
+        examples += sorted(group, key=lambda e: (not e["name"].endswith("/NEq"), e["name"]))
 
     page = open(os.path.join(HERE, "template.html")).read()
     page = page.replace("/*__CM_CSS__*/", open(os.path.join(HERE, "codemirror-5.65.16.min.css")).read())
