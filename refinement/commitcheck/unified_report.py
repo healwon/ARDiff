@@ -319,7 +319,7 @@ CSS = """
 --sup:#e8b84e;--supsoft:#352a12;--flow:#b892f0;--flowsoft:#2e2342;--add:#163020;--del:#3a1d19;color-scheme:dark}
 *{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5}
 .wrap{max-width:1280px;margin:0 auto;padding-inline:16px;padding-block:24px 64px;display:grid;gap:28px}
-h1{font-size:22px;margin:0}h2{font-size:15px;margin:0;font-family:var(--mono);word-break:break-all}
+h1{font-size:22px;margin:0}.hd{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline}.pgl{color:var(--ctx);font-size:13px}h2{font-size:15px;margin:0;font-family:var(--mono);word-break:break-all}
 code{font-family:var(--mono);font-size:12.5px}.muted{color:var(--muted)}.hl{color:var(--neq)}
 .pair{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:16px;display:grid;gap:12px;min-width:0}
 .ph{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center}
@@ -432,7 +432,7 @@ def main():
 <title>Software Regression Visualization</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
 <style>{CSS}</style>
-<div class="wrap"><header><h1>Software Regression Visualization</h1></header>
+<div class="wrap"><header class="hd"><h1>Software Regression Visualization</h1><a class="pgl" href="playground.html">open the playground →</a></header>
 {summary_html()}
 {''.join(sections)}</div>"""
     open(out, "w").write(page)

@@ -1,0 +1,120 @@
+# Run ARDiff on an old/new pair submitted as an issue (from the playground's "Run ARDiff on GitHub" button)
+# and answer with a comment the playground can read without a token.
+#
+# Issue title must start with "[ARDiff]"; the body holds two ```java blocks under "### old" and "### new".
+# The job that runs the submitted code has a read-only token; the job that comments never runs that code.
+# GitHub runs issue-triggered workflows from the DEFAULT branch, so this file must also exist on main.
+name: ARDiff issue run
+
+on:
+  issues:
+    types: [opened]
+
+concurrency:
+  group: ardiff-issue-${{ github.event.issue.number }}
+
+jobs:
+  run:
+    if: startsWith(github.event.issue.title, '[ARDiff]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      CORES: "0-1"
+      JOBS: "1"
+      HEAP: "4G"
+      JPF_HEAP: "2g"
+      TIMEOUT: "300"
+    steps:
+      # issue events always run the workflow file from the default branch; the ARDiff tooling lives on `docs`
+      - uses: actions/checkout@v4
+        with:
+          ref: docs
+
+      - name: Set up Zulu JDK 8 with JavaFX
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "8"
+          java-package: jdk+fx
+
+      - name: Read the pair from the issue
+        # the issue text is only ever read by Python from the event file, never pasted into a shell command
+        run: |
+          python3 - <<'PY'
+          import json, os, re, sys
+          ev = json.load(open(os.environ["GITHUB_EVENT_PATH"]))
+          body = (ev["issue"].get("body") or "").replace("\r\n", "\n")
+          out = {"ok": False}
+          def block(name):
+              m = re.search(r"###\s*" + name + r"\s*\n+```(?:java)?\n(.*?)\n```", body, re.S | re.I)
+              return m.group(1) if m else None
+          old, new = block("old"), block("new")
+          if not old or not new:
+              out["error"] = "could not find the ### old / ### new java blocks"
+          elif len(old) > 20000 or len(new) > 20000:
+              out["error"] = "code is too large (20 kB per version)"
+          elif not re.search(r"\bclass\s+oldV\b", old) or not re.search(r"\bclass\s+newV\b", new):
+              out["error"] = "old must declare class oldV and new must declare class newV"
+          else:
+              d = os.path.join(os.environ["RUNNER_TEMP"], "pair")
+              os.makedirs(d, exist_ok=True)
+              open(os.path.join(d, "oldV.java"), "w").write(old + "\n")
+              open(os.path.join(d, "newV.java"), "w").write(new + "\n")
+              out["ok"] = True
+          os.makedirs("result", exist_ok=True)
+          json.dump(out, open("result/result.json", "w"))
+          PY
+
+      - name: Run ARDiff
+        run: |
+          if python3 -c "import json,sys; sys.exit(0 if json.load(open('result/result.json'))['ok'] else 1)"; then
+            chmod +x Implementation/z3 refinement/*.sh
+            ARDIFF_JAVA_HOME="$JAVA_HOME" refinement/ardiff-workflow.sh setup
+            refinement/ardiff-workflow.sh rundir "$RUNNER_TEMP/pair" || true
+            python3 - <<'PY'
+          import json, os, re
+          d = os.path.join(os.environ["RUNNER_TEMP"], "pair")
+          log = open(os.path.join(d, "debug.log"), errors="replace").read() if os.path.exists(os.path.join(d, "debug.log")) else ""
+          verdict = (re.findall(r"Output : ([A-Z ]+)", log) or ["TIMEOUT/ERROR"])[-1].strip()
+          reason = (re.findall(r"Reason: (.*)", log) or [None])[-1]
+          it = os.path.join(d, "iterations")
+          iters = len([x for x in os.listdir(it) if x.startswith("iter_")]) if os.path.isdir(it) else 0
+          json.dump({"ok": True, "verdict": verdict, "iterations": iters, "reason": reason}, open("result/result.json", "w"))
+          PY
+          fi
+          cat result/result.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ardiff-result
+          path: result/result.json
+
+  comment:
+    needs: run
+    if: always() && startsWith(github.event.issue.title, '[ARDiff]')
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ardiff-result
+        continue-on-error: true
+
+      - name: Comment and close
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let r = {ok: false, error: 'ARDiff run failed before producing a result'};
+            try { r = JSON.parse(fs.readFileSync('result.json', 'utf8')); } catch (e) {}
+            const head = r.ok ? `**ARDiff: ${r.verdict}**` + (r.iterations ? ` · refinement iterations ${r.iterations}` : '') + (r.reason ? `\nReason: ${r.reason}` : '')
+                              : `ARDiff could not run: ${r.error}`;
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
+              body: `<!-- ardiff-result ${JSON.stringify(r)} -->\n${head}\n\n[workflow run](${run})`,
+            });
+            await github.rest.issues.update({owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, state: 'closed'});

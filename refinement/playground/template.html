@@ -1,0 +1,336 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Software Regression Playground</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>/*__CM_CSS__*/</style>
+<style>
+/* Layout: editors (old above new) on the left, live analysis on the right; stacks on narrow screens */
+:root{--bg:#f6f6f3;--panel:#fff;--fg:#1d2128;--muted:#5f6670;--rule:#dcdcd6;--eq:#2a7d4f;--neq:#b8432f;--unk:#9a6d12;
+--id:#2a7d4f;--idsoft:#e4f2e9;--ctx:#2f62a8;--ctxsoft:#e3ecf8;--brk:#b8432f;--brksoft:#f8e4df;--nof:#7b7f87;--nofsoft:#eeeeec;
+--cmp:#0f7c86;--cmpsoft:#dff2f3;--flow:#6b3fb3;--flowsoft:#efe6fb;--add:#e6f3ea;--del:#f9e7e3;
+--sans:"IBM Plex Sans","Helvetica Neue",system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121417;--panel:#1a1d22;--fg:#e4e6ea;--muted:#9aa1ab;--rule:#2c3038;
+--eq:#5cc18a;--neq:#ee7a64;--unk:#e0b04a;--id:#5cc18a;--idsoft:#18301f;--ctx:#7aa7ea;--ctxsoft:#1a2a40;--brk:#ee7a64;--brksoft:#3a1f1a;
+--nof:#9aa1ab;--nofsoft:#24272d;--cmp:#4fc0c9;--cmpsoft:#14313a;--flow:#b892f0;--flowsoft:#2e2342;--add:#163020;--del:#3a1d19;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#121417;--panel:#1a1d22;--fg:#e4e6ea;--muted:#9aa1ab;--rule:#2c3038;--eq:#5cc18a;--neq:#ee7a64;--unk:#e0b04a;
+--id:#5cc18a;--idsoft:#18301f;--ctx:#7aa7ea;--ctxsoft:#1a2a40;--brk:#ee7a64;--brksoft:#3a1f1a;--nof:#9aa1ab;--nofsoft:#24272d;
+--cmp:#4fc0c9;--cmpsoft:#14313a;--flow:#b892f0;--flowsoft:#2e2342;--add:#163020;--del:#3a1d19;color-scheme:dark}
+*{box-sizing:border-box}[hidden]{display:none!important}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5}
+.top{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--rule);background:var(--panel)}
+.top h1{font-size:17px;margin:0}.top .sp{flex:1}
+select,button{font:inherit;font-size:13px;color:var(--fg);background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:3px 9px;cursor:pointer}
+select:focus-visible,button:focus-visible,.ev:focus-visible,.hk:focus-visible{outline:2px solid var(--ctx);outline-offset:2px}
+.main{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:0;min-height:calc(100vh - 54px)}
+@media(max-width:980px){.main{grid-template-columns:minmax(0,1fr)}}
+.left{border-right:1px solid var(--rule);padding:12px 16px;display:grid;gap:10px;align-content:start;min-width:0}
+.right{padding:12px 16px;display:grid;gap:12px;align-content:start;min-width:0}
+.ed{display:grid;gap:4px;min-width:0}.ed label{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.03em}
+.CodeMirror{height:auto;min-height:120px;border:1px solid var(--rule);border-radius:8px;font-family:var(--mono);font-size:12.5px;background:var(--panel);color:var(--fg)}
+.CodeMirror-gutters{background:var(--panel);border-right:1px solid var(--rule)}.CodeMirror-linenumber{color:var(--muted)}
+.CodeMirror-cursor{border-left-color:var(--fg)}
+.cm-keyword{color:#7a3fb3}.cm-number{color:#b0570f}.cm-comment{color:var(--muted);font-style:italic}.cm-type,.cm-variable-3{color:#2f62a8}.cm-def{color:var(--fg)}
+.ln-changes{background:var(--brksoft)}.ln-none{background:var(--idsoft)}.ln-undone,.ln-together{background:var(--cmpsoft)}.ln-isolate{background:var(--nofsoft)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chip{font-family:var(--mono);font-size:11.5px;font-weight:600;padding:1px 9px;border-radius:99px;border:1.5px solid currentColor;white-space:nowrap}
+.chip.eq{color:var(--eq)}.chip.neq{color:var(--neq)}.chip.unk{color:var(--unk)}.muted{color:var(--muted)}
+.note{font-size:12px;color:var(--muted)}
+.err{border:1px solid var(--unk);color:var(--unk);border-radius:8px;padding:8px 10px;font-family:var(--mono);font-size:12.5px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:8px;align-items:start}
+.hk{display:grid;gap:6px;background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:9px 11px;cursor:pointer}
+.hk.changes{box-shadow:inset 4px 0 0 var(--brk)}.hk.none{box-shadow:inset 4px 0 0 var(--id)}.hk.undone,.hk.together{box-shadow:inset 4px 0 0 var(--cmp)}.hk.isolate{box-shadow:inset 4px 0 0 var(--nof)}
+.hk[aria-pressed="true"]{border-color:var(--fg)}
+.hkd{display:grid;gap:1px;font-size:12px}.hkd .side{display:inline-block;width:30px;font-size:10.5px;color:var(--muted)}
+.hkd code{font-family:var(--mono);font-size:12px}
+.tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.num{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.tag{font-size:11.5px;border:1px solid var(--rule);border-radius:4px;padding:0 6px;color:var(--muted)}
+.tag.changes{border-color:var(--brk);color:var(--brk)}.tag.none{border-color:var(--id);color:var(--id)}.tag.undone,.tag.together{border-color:var(--cmp);color:var(--cmp)}
+.ins{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.ins .h{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-right:2px}
+.ev{display:inline-flex;gap:8px;align-items:center;border-radius:4px;padding:2px 8px;font-family:var(--mono);font-size:12px;background:var(--flowsoft);box-shadow:inset 3px 0 0 var(--flow);cursor:pointer}
+.ev.df{box-shadow:inset 3px 0 0 var(--neq)}.ev[aria-pressed="true"]{outline:2px solid var(--flow);outline-offset:-1px}.ev .hl{color:var(--neq)}
+.svw{position:relative;overflow:auto;border:1px solid var(--rule);border-radius:8px;background:var(--panel);max-height:70vh}
+.svw table{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px}
+.svw th{font-family:var(--sans);font-size:11.5px;color:var(--muted);font-weight:500;text-align:left;padding:4px 8px;border-bottom:1px solid var(--rule);position:sticky;top:0;background:var(--panel);z-index:1}
+.svw td{padding:0 6px;line-height:26px;vertical-align:top}.svw td.n{color:var(--muted);text-align:right;width:1%;user-select:none}
+.svw td.g{width:40px;min-width:40px;padding:0}.svw td.c{white-space:pre;width:49%}.svw td.R{border-left:1px solid var(--rule)}
+.svw td.gap{background:repeating-linear-gradient(135deg,transparent 0 5px,var(--rule) 5px 6px)}
+.svw td.L.chg{background:var(--del)}.svw td.R.chg{background:var(--add)}
+.svw span.del{color:var(--neq);font-weight:600}.svw span.add{color:var(--eq);font-weight:600}
+.svw td.fl{background:var(--flowsoft)}.svw td.norun{opacity:.4}.svw td.dv{box-shadow:inset 3px 0 0 var(--neq)}
+.svw td.sel{outline:2px solid var(--fg);outline-offset:-2px}
+.svw .val{margin-left:12px;color:var(--flow);font-weight:600;font-family:var(--sans)}
+svg.ov{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
+svg.ov .fl{fill:none;stroke:var(--flow);stroke-width:1.3;opacity:.85}svg.ov .fl.back{stroke-dasharray:4 3}svg.ov .flh{fill:var(--flow)}svg.ov .flt{fill:var(--flow);font:600 10px var(--mono)}
+.bar{font-size:12.5px;min-height:20px}
+.remote{border:1px dashed var(--rule);border-radius:8px;padding:8px 10px;font-size:12.5px;display:grid;gap:6px}
+.remote a{color:var(--ctx);font-weight:600}.remote textarea{width:100%;min-height:90px;font-family:var(--mono);font-size:11.5px;color:var(--fg);background:var(--bg);border:1px solid var(--rule);border-radius:6px}
+.runbtn{font-size:12px;border-color:var(--ctx);color:var(--ctx)}
+.lg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;color:var(--muted)}
+.lg .k{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:5px;vertical-align:-2px}
+</style>
+
+<div class="top">
+  <h1>Software Regression Playground</h1>
+  <label class="muted" for="ex">example</label>
+  <select id="ex"></select>
+  <span class="sp"></span>
+  <span class="note">edit either version — the analysis on the right updates as you type</span>
+</div>
+<div class="main">
+  <div class="left">
+    <div class="ed"><label for="old">old version</label><textarea id="old"></textarea></div>
+    <div class="ed"><label for="new">new version</label><textarea id="new"></textarea></div>
+    <p class="note">The first method of each class is compared. Supported: int / double / boolean parameters, assignments, if / else, for / while / do,
+      return, Math.min / max / abs and other Math functions. Java int semantics (32-bit overflow, division toward zero).</p>
+  </div>
+  <div class="right">
+    <div class="chips" id="chips"></div>
+    <div class="remote" id="remote" hidden></div>
+    <div id="err" class="err" hidden></div>
+    <div class="cards" id="cards"></div>
+    <div class="ins" id="ins"></div>
+    <div class="svw" id="svw"><table id="tbl"></table><svg class="ov" aria-hidden="true"></svg></div>
+    <div class="bar" id="bar"></div>
+    <div class="lg"><span><i class="k" style="box-shadow:inset 3px 0 0 var(--brk);background:var(--brksoft)"></i>changes the result</span>
+      <span><i class="k" style="box-shadow:inset 3px 0 0 var(--id);background:var(--idsoft)"></i>no effect on the result</span>
+      <span><i class="k" style="box-shadow:inset 3px 0 0 var(--cmp);background:var(--cmpsoft)"></i>matters only together with other changes</span>
+      <span><i class="k" style="border-top:2px solid var(--flow);height:0;width:16px;border-radius:0"></i>execution of the selected input</span>
+      <span><i class="k" style="box-shadow:inset 3px 0 0 var(--neq)"></i>runs diverge</span></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+<script>/*__ENGINE__*/</script>
+<script>
+(function () {
+var EX = /*__EXAMPLES__*/[];
+var REPO = /*__REPO__*/"";
+var remote = {}, pending = null, pollTimer = null;   // ARDiff results fetched from GitHub, keyed by the code they are for
+try { remote = JSON.parse(localStorage.getItem("srp.remote") || "{}"); } catch (e) {}
+function codeKey(o, n) { var h = 0, s = o + "\u0000" + n; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return String(h); }
+var $ = function (id) { return document.getElementById(id); };
+var esc = function (s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); };
+var LABEL = {changes: "changes the result", none: "no effect on the result", undone: "changes the result alone — restored by", together: "matters only together with", isolate: "cannot be tried alone"};
+var cmOld, cmNew, res = null, st = {hk: null, run: null}, runs = [], timer = null, curEx = null, marks = [];
+
+function mk(id) {
+  var ta = $(id);
+  if (window.CodeMirror) {
+    var cm = CodeMirror.fromTextArea(ta, {mode: "text/x-java", lineNumbers: true, indentUnit: 4, viewportMargin: Infinity});
+    cm.on("change", schedule);
+    return cm;
+  }
+  ta.style.width = "100%"; ta.style.minHeight = "220px"; ta.style.fontFamily = "var(--mono)"; ta.addEventListener("input", schedule);
+  return {getValue: function () { return ta.value; }, setValue: function (v) { ta.value = v; schedule(); }, addLineClass: function () {}, removeLineClass: function () {}};
+}
+function schedule() { clearTimeout(timer); timer = setTimeout(update, 300); }
+
+function update() {
+  var o = cmOld.getValue(), n = cmNew.getValue();
+  res = Engine.analyze(o, n);
+  st.hk = null; st.run = null;
+  render(o, n);
+}
+
+function runRemote() {
+  var o = cmOld.getValue(), n = cmNew.getValue(), id = Math.random().toString(36).slice(2, 10);
+  var body = "<!-- ardiff-run v1 -->\n### old\n```java\n" + o.trim() + "\n```\n\n### new\n```java\n" + n.trim() + "\n```\n";
+  var title = "[ARDiff] playground " + id;
+  var url = "https://github.com/" + REPO + "/issues/new?title=" + encodeURIComponent(title) + "&body=" + encodeURIComponent(body);
+  pending = {id: id, key: codeKey(o, n), issue: null, t0: Date.now()};
+  var box = $("remote"); box.hidden = false;
+  box.innerHTML = url.length < 7500
+    ? "<div>1. <a href='" + esc(url) + "' target='_blank' rel='noopener'>Open the prefilled issue on GitHub</a> and press <b>Submit new issue</b> (you need to be signed in).</div>"
+    : "<div>1. The code is too long for a link. <a href='https://github.com/" + esc(REPO) + "/issues/new?title=" + encodeURIComponent(title) + "' target='_blank' rel='noopener'>Open a new issue</a> titled <code>" + esc(title) + "</code> and paste this as its body:</div><textarea readonly>" + esc(body) + "</textarea>";
+  box.innerHTML += "<div id='rstat' class='muted'>2. Waiting for the issue… ARDiff then runs on GitHub Actions (a few minutes) and the result appears here.</div>";
+  clearInterval(pollTimer); pollTimer = setInterval(poll, 15000);
+}
+function rstat(t) { var e = $("rstat"); if (e) e.innerHTML = t; }
+function poll() {
+  if (!pending) return;
+  if (Date.now() - pending.t0 > 40 * 60 * 1000) { clearInterval(pollTimer); rstat("Stopped waiting after 40 minutes."); return; }
+  var api = "https://api.github.com/repos/" + REPO + "/issues";
+  if (!pending.issue) {
+    fetch(api + "?state=all&sort=created&direction=desc&per_page=30").then(function (r) { return r.json(); }).then(function (list) {
+      (list || []).forEach(function (it) { if (it.title && it.title.indexOf(pending.id) >= 0) pending.issue = it.number; });
+      if (pending.issue) { rstat("2. Issue <a href='https://github.com/" + esc(REPO) + "/issues/" + pending.issue + "' target='_blank' rel='noopener'>#" + pending.issue + "</a> found — ARDiff is running on GitHub Actions…"); poll(); }
+    }).catch(function () { rstat("This page cannot reach the GitHub API here; follow the issue on GitHub for the result."); clearInterval(pollTimer); });
+    return;
+  }
+  fetch(api + "/" + pending.issue + "/comments").then(function (r) { return r.json(); }).then(function (cs) {
+    (cs || []).forEach(function (c) {
+      var m = /<!-- ardiff-result (\{.*?\}) -->/.exec(c.body || "");
+      if (!m || !pending) return;
+      var r = JSON.parse(m[1]);
+      remote[pending.key] = {verdict: r.ok ? r.verdict : "ERROR", issue: pending.issue, url: c.html_url, reason: r.reason || r.error || null};
+      try { localStorage.setItem("srp.remote", JSON.stringify(remote)); } catch (e) {}
+      rstat("ARDiff finished on issue #" + pending.issue + ": <b>" + esc(remote[pending.key].verdict) + "</b>" + (remote[pending.key].reason ? " — " + esc(remote[pending.key].reason) : ""));
+      pending = null; clearInterval(pollTimer); update();
+    });
+  }).catch(function () {});
+}
+
+function inputText(inp) { return Object.keys(inp).map(function (k) { return k + " = " + inp[k]; }).join(", "); }
+
+function render(o, n) {
+  var ex = curEx !== null ? EX[curEx] : null, edited = !ex || ex.old !== o || ex.new !== n;
+  var chips = [];
+  if (ex && !edited && ex.ardiff) chips.push("<span class='chip " + ({"EQUIVALENT": "eq", "NOT EQUIVALENT": "neq"}[ex.ardiff] || "unk") + "' title='precomputed by ARDiff for this example'>ARDiff: " + esc(ex.ardiff) + "</span>");
+  else if (remote[codeKey(o, n)]) { var rr = remote[codeKey(o, n)]; chips.push("<a class='chip " + ({"EQUIVALENT": "eq", "NOT EQUIVALENT": "neq"}[rr.verdict] || "unk") + "' href='" + esc(rr.url) + "' target='_blank' rel='noopener' title='ARDiff ran on GitHub Actions for exactly this code'>ARDiff: " + esc(rr.verdict) + " (#" + rr.issue + ")</a>"); }
+  else chips.push("<span class='chip unk' title='ARDiff needs a JVM, so it runs on GitHub Actions'>ARDiff: not run (edited)</span>");
+  if (REPO && (edited || !ex.ardiff) && !remote[codeKey(o, n)]) chips.push("<button type='button' class='runbtn' id='runbtn'>Run ARDiff on GitHub</button>");
+  $("err").hidden = !res.error;
+  if (res.error) { $("err").textContent = res.error; $("chips").innerHTML = chips.join(""); $("cards").innerHTML = ""; $("ins").innerHTML = ""; $("tbl").innerHTML = ""; $("bar").textContent = ""; clearSvg(); clearMarks(); return; }
+  var nd = res.diffIdx.length, N = res.inputs.length;
+  chips.push("<span class='chip " + (nd ? "neq" : "eq") + "' title='old and new run on " + N + " boundary and random inputs; testing, not a proof'>" +
+             (nd ? nd + " of " + N + " inputs differ" : "same on " + N + " inputs") + "</span>");
+  if (res.unsupported) chips.push("<span class='chip unk'>" + esc(res.unsupported.replace("?unsupported: ", "")) + "</span>");
+  $("chips").innerHTML = chips.join("");
+
+  // inputs to show: differing ones first (one per distinct pair of results), then a couple that agree
+  runs = []; var seen = {};
+  res.diffIdx.forEach(function (i) { var k = res.base[i] + "|" + res.full[i]; if (!seen[k] && runs.length < 6) { seen[k] = 1; runs.push(i); } });
+  for (var i = 0, c = 0; i < N && c < (nd ? 1 : 3); i += Math.max(1, Math.floor(N / 7))) if (res.diffIdx.indexOf(i) < 0) { runs.push(i); c++; }
+  res.groups.forEach(function (g) { if (g.example !== undefined && runs.indexOf(g.example) < 0) runs.push(g.example); });
+
+  $("cards").innerHTML = res.groups.map(function (g, k) {
+    var lines = function (src, ls) { var a = src.split("\n"); return ls.length ? ls.map(function (l) { return "<code>" + esc(a[l - 1].trim()) + "</code>"; }).join("<br>") : "<span class='muted'>(none)</span>"; };
+    var tag = "<span class='tag " + g.role + "'>" + esc(LABEL[g.role]) + (g.with && g.with.length ? " " + g.with.map(function (j) { return "#" + (j + 1); }).join(", ") : "") + "</span>";
+    var ev = g.example !== undefined && g.role !== "none" ? "<span class='ev" + (res.diffIdx.indexOf(g.example) >= 0 ? " df" : "") + "' role='button' tabindex='0' data-run='" + g.example + "'><code>" + esc(inputText(res.inputs[g.example])) + "</code></span>" : "";
+    return "<div class='hk " + g.role + "' role='button' tabindex='0' data-hk='" + k + "'><div class='tags'><span class='num'>#" + (k + 1) + "</span>" + tag + "</div>" +
+      "<div class='hkd'><div><span class='side'>old</span>" + lines(o, g.oldLines) + "</div><div><span class='side'>new</span>" + lines(n, g.newLines) + "</div></div>" + ev + "</div>";
+  }).join("") || "<p class='muted'>no code changes</p>";
+
+  $("ins").innerHTML = "<span class='h'>inputs</span>" + runs.map(function (i) {
+    var df = res.base[i] !== res.full[i];
+    return "<span class='ev" + (df ? " df" : "") + "' role='button' tabindex='0' data-run='" + i + "'><code>" + esc(inputText(res.inputs[i])) + "</code><b>" + esc(res.base[i]) + "</b><span class='muted'>/</span><b class='" + (df ? "hl" : "") + "'>" + esc(res.full[i]) + "</b></span>";
+  }).join("");
+
+  // side-by-side diff
+  var d = Engine.diffRows(o, n), a = o.split("\n"), b = n.split("\n");
+  var code = function (line, spans, cls) {
+    if (!spans || !spans.length) return esc(line) || " ";
+    spans = spans.slice().sort(function (x, y) { return x[0] - y[0]; });
+    var out = "", pos = 0; spans.forEach(function (s) { if (s[0] < pos) return; out += esc(line.slice(pos, s[0])) + "<span class='" + cls + "'>" + esc(line.slice(s[0], s[1])) + "</span>"; pos = s[1]; });
+    return out + esc(line.slice(pos));
+  };
+  var stmt = function (line, spans, cls) {
+    var ind = line.length - line.replace(/^\s+/, "").length;
+    var rest = (spans || []).filter(function (s) { return s[1] > ind; }).map(function (s) { return [Math.max(0, s[0] - ind), s[1] - ind]; });
+    return "<span class='ind'>" + esc(line.slice(0, ind)) + "</span><span class='st'>" + code(line.slice(ind), rest, cls) + "</span>";
+  };
+  $("tbl").innerHTML = "<tr><th></th><th></th><th>old</th><th></th><th></th><th>new</th></tr>" + d.rows.map(function (r, row) {
+    var l = r[0], rr = r[1];
+    return "<tr data-row='" + row + "'><td class='n'>" + (l === null ? "" : l + 1) + "</td><td class='g'></td><td class='c L" + (l !== null && d.lch[l] ? " chg" : "") + (l === null ? " gap" : "") + "' data-l='" + (l === null ? "" : l + 1) + "'>" + (l === null ? "" : stmt(a[l], d.lch[l], "del")) + "<span class='val'></span></td>" +
+           "<td class='n'>" + (rr === null ? "" : rr + 1) + "</td><td class='g'></td><td class='c R" + (rr !== null && d.rch[rr] ? " chg" : "") + (rr === null ? " gap" : "") + "' data-r='" + (rr === null ? "" : rr + 1) + "'>" + (rr === null ? "" : stmt(b[rr], d.rch[rr], "add")) + "<span class='val'></span></td></tr>";
+  }).join("");
+
+  bind();
+  if (runs.length) select(runs[0]); else paint();
+}
+
+function bind() {
+  var rb = $("runbtn"); if (rb) rb.addEventListener("click", runRemote);
+  document.querySelectorAll("[data-run]").forEach(function (e) {
+    var go = function (ev) { ev.stopPropagation(); select(+e.dataset.run); };
+    e.addEventListener("click", go); e.addEventListener("keydown", function (ev) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); go(ev); } });
+  });
+  document.querySelectorAll(".hk").forEach(function (e) {
+    e.addEventListener("click", function () { st.hk = st.hk === +e.dataset.hk ? null : +e.dataset.hk; paint(); });
+    e.addEventListener("keydown", function (ev) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); e.click(); } });
+  });
+}
+
+function select(i) { st.run = i; paint(); }
+
+function cell(side, ln) { return document.querySelector("#tbl td." + side + "[data-" + side.toLowerCase() + "='" + ln + "']"); }
+function clearSvg() { var s = document.querySelector("svg.ov"); while (s.firstChild) s.removeChild(s.firstChild); }
+function clearMarks() { marks.forEach(function (m) { m[0].removeLineClass(m[1], "background", m[2]); }); marks = []; }
+
+function paint() {
+  if (!res || res.error) return;
+  document.querySelectorAll("#tbl td.c").forEach(function (td) { td.classList.remove("fl", "norun", "dv", "sel"); var v = td.querySelector(".val"); if (v) v.textContent = ""; });
+  document.querySelectorAll(".hk").forEach(function (c) { c.setAttribute("aria-pressed", +c.dataset.hk === st.hk ? "true" : "false"); });
+  document.querySelectorAll(".ev").forEach(function (c) { c.setAttribute("aria-pressed", +c.dataset.run === st.run ? "true" : "false"); });
+  clearMarks();
+  res.groups.forEach(function (g, k) {
+    if (st.hk !== null && st.hk !== k) return;
+    g.oldLines.forEach(function (l) { marks.push([cmOld, l - 1, "ln-" + g.role]); cmOld.addLineClass(l - 1, "background", "ln-" + g.role); });
+    g.newLines.forEach(function (l) { marks.push([cmNew, l - 1, "ln-" + g.role]); cmNew.addLineClass(l - 1, "background", "ln-" + g.role); });
+  });
+  if (st.hk !== null) {
+    var g = res.groups[st.hk];
+    g.oldLines.forEach(function (l) { var c = cell("L", l); if (c) c.classList.add("sel"); });
+    g.newLines.forEach(function (l) { var c = cell("R", l); if (c) c.classList.add("sel"); });
+  }
+  var bar = $("bar");
+  if (st.run === null) { bar.textContent = ""; clearSvg(); return; }
+  var inp = res.inputs[st.run];
+  var ro = Engine.run(res.mo, inp, {trace: true}), rn = Engine.run(res.mn, inp, {trace: true});
+  st.to = ro.trace; st.tn = rn.trace;
+  ro.trace.forEach(function (l) { var c = cell("L", l); if (c) c.classList.add("fl"); });
+  rn.trace.forEach(function (l) { var c = cell("R", l); if (c) c.classList.add("fl"); });
+  document.querySelectorAll("#tbl td.c:not(.fl):not(.gap)").forEach(function (td) { td.classList.add("norun"); });
+  var lo = cell("L", ro.trace[ro.trace.length - 1]), lnn = cell("R", rn.trace[rn.trace.length - 1]);
+  if (lo) lo.querySelector(".val").textContent = "⇒ " + ro.value; if (lnn) lnn.querySelector(".val").textContent = "⇒ " + rn.value;
+  var rowOf = function (side, l) { var c = cell(side, l); return c ? +c.parentNode.dataset.row : -1; };
+  var dv = -1; for (var i = 0; i < Math.min(ro.trace.length, rn.trace.length); i++) if (rowOf("L", ro.trace[i]) !== rowOf("R", rn.trace[i])) { dv = i; break; }
+  if (dv >= 0) { var x = cell("L", ro.trace[dv]), y = cell("R", rn.trace[dv]); if (x) x.classList.add("dv"); if (y) y.classList.add("dv"); }
+  else if (ro.value !== rn.value) document.querySelectorAll("#tbl td.c.fl.chg").forEach(function (td) { td.classList.add("dv"); });
+  bar.innerHTML = "<b>" + esc(inputText(inp)) + "</b> &nbsp; old <b>" + esc(ro.value) + "</b> / new <b>" + esc(rn.value) + "</b>" + (ro.value !== rn.value ? " &nbsp; <span style='color:var(--neq)'>differ</span>" : " &nbsp; <span class='muted'>same</span>");
+  draw();
+}
+
+var NS = "http://www.w3.org/2000/svg";
+function el(nm, at) { var e = document.createElementNS(NS, nm); for (var k in at) e.setAttribute(k, at[k]); return e; }
+function rect(td) { var s = td.querySelector(".st"); return (s && s.textContent.trim() ? s : td).getBoundingClientRect(); }
+function draw() {
+  var svg = document.querySelector("svg.ov"), wrap = $("svw"); clearSvg();
+  if (st.run === null || !st.to) return;
+  var W = wrap.getBoundingClientRect(); if (!W.width) return;
+  svg.setAttribute("width", wrap.scrollWidth); svg.setAttribute("height", wrap.scrollHeight);
+  var m = el("marker", {id: "fa", viewBox: "0 0 8 8", refX: "7", refY: "4", markerWidth: "5", markerHeight: "5", orient: "auto-start-reverse"});
+  m.appendChild(el("path", {d: "M0,0 L8,4 L0,8 z", "class": "flh"})); var df = el("defs", {}); df.appendChild(m); svg.appendChild(df);
+  [["L", st.to], ["R", st.tn]].forEach(function (p) {
+    var side = p[0], q = p[1], edges = {}, order = [];
+    for (var i = 0; i + 1 < q.length; i++) { if (q[i] === q[i + 1]) continue; var k = q[i] + ">" + q[i + 1]; if (!edges[k]) { edges[k] = 0; order.push([q[i], q[i + 1]]); } edges[k]++; }
+    order.forEach(function (e) {
+      var A = cell(side, e[0]), B = cell(side, e[1]); if (!A || !B) return;
+      var ra = rect(A), rb = rect(B), back = rb.top < ra.top, sx = wrap.scrollLeft, sy = wrap.scrollTop;
+      var xa = ra.left - W.left - 7 + sx, xb = rb.left - W.left - 5 + sx, ya = ra.top + ra.height / 2 - W.top + sy + (back ? -4 : 4), yb = rb.top + rb.height / 2 - W.top + sy + (back ? 4 : -4);
+      var near = !back && (+B.parentNode.dataset.row - +A.parentNode.dataset.row) === 1;
+      var bend = near ? 12 : (back ? 26 : 18) + Math.min(46, Math.abs(yb - ya) / 4), cx = Math.max(3, Math.min(xa, xb) - bend);
+      svg.appendChild(el("path", {d: "M" + xa + "," + ya + " C" + cx + "," + ya + " " + cx + "," + yb + " " + xb + "," + yb, "class": "fl" + (back ? " back" : ""), "marker-end": "url(#fa)"}));
+      var c = edges[e[0] + ">" + e[1]];
+      if (back && c > 1) { var t = el("text", {x: cx - 3, y: (ya + yb) / 2 + 3, "class": "flt", "text-anchor": "end"}); t.textContent = "×" + c; svg.appendChild(t); }
+    });
+  });
+}
+
+function load(i) {
+  curEx = i;
+  var ex = EX[i];
+  cmOld.setValue(ex.old); cmNew.setValue(ex.new);
+  try { localStorage.setItem("srp.ex", ex.name); } catch (e) {}
+  clearTimeout(timer); update();
+}
+
+window.addEventListener("load", function () {
+  cmOld = mk("old"); cmNew = mk("new");
+  var sel = $("ex");
+  sel.innerHTML = EX.map(function (e, i) { return "<option value='" + i + "'>" + esc(e.name) + (e.ardiff ? " — ARDiff: " + esc(e.ardiff) : "") + "</option>"; }).join("");
+  sel.addEventListener("change", function () { load(+sel.value); });
+  var start = 0;
+  try { var nm = localStorage.getItem("srp.ex"); EX.forEach(function (e, i) { if (e.name === nm) start = i; }); } catch (e) {}
+  var hm = /^#(\w+)$/.exec(location.hash); if (hm) EX.forEach(function (e, i) { if (e.name.replace(/\W/g, "") === hm[1]) start = i; });
+  sel.value = start;
+  if (EX.length) load(start);
+  window.addEventListener("resize", draw);
+  $("svw").addEventListener("scroll", function () {});
+  if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener("loadingdone", draw);
+  if (window.ResizeObserver) new ResizeObserver(draw).observe($("tbl"));
+});
+})();
+</script>

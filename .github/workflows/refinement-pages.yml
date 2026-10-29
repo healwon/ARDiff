@@ -155,6 +155,8 @@ jobs:
           else
             cp "$r/report.html" _site/index.html
           fi
+          # live playground (edit code in the browser; "Run ARDiff on GitHub" goes through ardiff-issue.yml)
+          python3 refinement/playground/build_playground.py _site/playground.html --report "$r/report.json" --repo "$GITHUB_REPOSITORY"
           # ARDiff inputs and logs per method, for anyone who wants the raw data
           if [ -d "$r/pairs" ]; then
             mkdir -p _site/pairs
