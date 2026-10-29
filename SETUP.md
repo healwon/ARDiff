@@ -33,8 +33,8 @@ workflow 이름: **ARDiff commit check**. 기본은 **벤치마크 모드**: pus
 `limit`으로 개수(기본 `0` = 전부)를 정합니다. `pairs`는 커밋에서 바뀐 폴더만, `methods`는 커밋 이전/이후의 바뀐 메서드를 비교합니다.
 NOT EQUIVALENT면 어떤 입력에서 결과가 달라지는지 보여 주는 보고서를 Pages에 올립니다.
 
-- **자동**: `.java` 파일이나 `refinement/`, workflow 파일이 바뀐 커밋을 main, master, docs에 push하면 실행.
-  `examples/readable-vs-fast` 아래 oldV/newV 쌍을 검사 (methods/pairs 모드를 수동으로 고르면 그 push의 커밋 범위 `before..after` 기준). docs에서 배포하려면 **Settings → Environments → github-pages → Deployment branches and tags**에 `docs` 추가
+- **자동**: `.java` 파일이나 `refinement/`, workflow 파일이 바뀐 커밋을 main에 push하면 실행.
+  `examples/readable-vs-fast` 아래 oldV/newV 쌍을 검사 (methods/pairs 모드를 수동으로 고르면 그 push의 커밋 범위 `before..after` 기준).
 - **수동**: **Actions → ARDiff commit check → Run workflow**
   - `target_repo`: 검사할 다른 저장소의 git URL (public). 비우면 이 저장소
   - `commit`: 검사할 커밋 (부모 커밋과 비교, 기본 HEAD)

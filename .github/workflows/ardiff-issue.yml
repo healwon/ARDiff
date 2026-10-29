@@ -3,7 +3,7 @@
 #
 # Issue title must start with "[ARDiff]"; the body holds two ```java blocks under "### old" and "### new".
 # The job that runs the submitted code has a read-only token; the job that comments never runs that code.
-# GitHub runs issue-triggered workflows from the DEFAULT branch, so this file must also exist on main.
+# Issue-triggered workflows always run from the default branch (main).
 name: ARDiff issue run
 
 on:
@@ -27,10 +27,7 @@ jobs:
       JPF_HEAP: "2g"
       TIMEOUT: "300"
     steps:
-      # issue events always run the workflow file from the default branch; the ARDiff tooling lives on `docs`
       - uses: actions/checkout@v4
-        with:
-          ref: docs
 
       - name: Set up Zulu JDK 8 with JavaFX
         uses: actions/setup-java@v4
