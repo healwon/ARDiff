@@ -92,6 +92,17 @@ body.rawmode #chips,body.rawmode #cards,body.rawmode #ins,body.rawmode #svw,body
 .rawtests,.lite pre.raw{font-variant-ligatures:none}
 body.rawmode .rawtests{display:block}#rawdiff{max-height:45vh}body.rawmode .lite pre.raw{max-height:70vh}
 body.rawmode .CodeMirror [class*="ln-"]{background:none}
+/* evaluation tasks (eval.html) */
+.task{border:1px solid var(--rule);border-radius:8px;background:var(--panel);padding:10px 12px;display:grid;gap:5px;font-size:13px}
+.task .th{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.task .th b{font-size:14px}
+.task .th button{margin-left:auto;font:inherit;font-size:12px;padding:2px 9px;border:1px solid var(--rule);border-radius:4px;background:none;color:var(--fg);cursor:pointer}
+.task p{margin:0 0 2px}.task .tg{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-top:4px}
+.task .ti{display:flex;gap:8px;align-items:baseline}.task .ti .ic{width:14px;flex:none;font-weight:700;text-align:center}
+.task .ti.ok .ic{color:var(--eq)}.task .ti.bad .ic{color:var(--neq)}.task .ti.wait .ic,.task .ti.na .ic{color:var(--muted)}
+.task .tsize{margin-top:4px;font-size:12px}
+/* ?viz=0: the task page without the visualization (e.g. a control group) */
+body.noviz #chips,body.noviz #cards,body.noviz #ins,body.noviz #svw,body.noviz #bar,body.noviz #lg,body.noviz #lite,body.noviz .top .mode,body.noviz #rawdiff,body.noviz #rawtests{display:none!important}
+body.noviz .CodeMirror [class*="ln-"]{background:none}
 .lg .k{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:5px;vertical-align:-2px}
 </style>
 
@@ -111,6 +122,7 @@ body.rawmode .CodeMirror [class*="ln-"]{background:none}
       return, Math.min / max / abs and other Math functions. Java int semantics (32-bit overflow, division toward zero).</p>
   </div>
   <div class="right">
+    <div class="task" id="task" hidden></div>
     <div class="chips" id="chips"></div>
     <div class="remote" id="remote" hidden></div>
     <div id="err" class="err" hidden></div>
@@ -136,6 +148,7 @@ body.rawmode .CodeMirror [class*="ln-"]{background:none}
 <script>
 (function () {
 var EX = /*__EXAMPLES__*/[];
+var EVAL = /*__EVAL__*/null;      // evaluation tasks: {name: {title, goal, keep: [checks], refTokens}} on eval.html
 var REPO = /*__REPO__*/"";
 // starting point: one method in each class, identical; edit either side
 var SKELETON = {
@@ -169,6 +182,51 @@ function update() {
   st.hk = null; st.run = null; lite.sel = null;
   render(o, n);
   runLite(o, n);
+  if (EVAL && curEx !== null) { try { localStorage.setItem("eval:" + EX[curEx].name, n); } catch (e) { } }
+  renderTask();
+}
+
+// ---------------------------------------------------------------- evaluation tasks (eval.html)
+// tokens deleted + inserted between two versions (comments ignored), counted like build_playground.py does
+function editTokens(a, b) {
+  var tk = function (s) { return Engine.stripComments(s).match(/[A-Za-z_$][\w$]*|\d+(?:\.\d+)?|\S/g) || []; };
+  return Engine.lcsOps(tk(a), tk(b)).filter(function (o) { return o[0] !== "="; }).length;
+}
+// no more executed steps than the given new version, on the tested inputs (keeps a speed-up)
+function stepsOk(ex) {
+  try {
+    var given = Engine.parseMethod(ex.new), a = 0, b = 0;
+    res.inputs.forEach(function (inp) { a += Engine.run(res.mn, inp).steps; b += Engine.run(given, inp).steps; });
+    return a <= b;
+  } catch (e) { return false; }
+}
+function renderTask() {
+  var box = $("task"), ex = EVAL && curEx !== null ? EX[curEx] : null, t = ex && EVAL[ex.name];
+  if (!t) { if (box) box.hidden = true; return; }
+  box.hidden = false;
+  var src = cmNew.getValue(), clean = Engine.stripComments(src), runs = res && !res.error && !res.unsupported, items = [];
+  items.push({ok: runs && !res.diffIdx.length, txt: !runs ? "does not run: " + ((res && (res.error || res.unsupported)) || "") :
+    res.diffIdx.length ? "differs from the old version on " + res.diffIdx.length + " of " + res.inputs.length + " tested inputs, e.g. " + inputText(res.inputs[res.diffIdx[0]]) :
+    "same result as the old version on all " + res.inputs.length + " tested inputs"});
+  var lv = lite.error ? null : lite.result ? lite.result.verdict : undefined;
+  items.push({ok: lv === null ? "na" : lv === undefined ? "wait" : lv === "EQUIVALENT",
+    txt: lv === null ? "ARDiff-lite unavailable here (it runs on the GitHub Pages version)" : lv === undefined ? "ARDiff-lite: checking…" :
+         "ARDiff-lite: " + lv + (lite.result.counterexample ? " — e.g. " + inputText(lite.result.counterexample.inputs) + ": old " + lite.result.counterexample.old + ", new " + lite.result.counterexample.new : "")});
+  var keep = t.keep.map(function (k) {
+    var ok = k.type === "contains" ? new RegExp(k.re).test(clean) : k.type === "absent" ? !new RegExp(k.re).test(clean) : k.type === "steps" ? runs && stepsOk(ex) : false;
+    return {ok: ok, txt: k.desc};
+  });
+  var li = function (x) {
+    var c = x.ok === true ? "ok" : x.ok === "wait" ? "wait" : x.ok === "na" ? "na" : "bad";
+    return "<div class='ti " + c + "'><span class='ic' aria-hidden='true'>" + {ok: "✓", bad: "✗", wait: "…", na: "–"}[c] + "</span><span>" + esc(x.txt) + "</span></div>";
+  };
+  var solved = items.concat(keep).every(function (x) { return x.ok === true || x.ok === "na"; });
+  box.innerHTML = "<div class='th'><b>" + esc(t.title) + "</b>" + (solved ? "<span class='chip eq'>solved</span>" : "") +
+    "<button type='button' id='reset'>reset to the given new version</button></div><p>" + esc(t.goal) + "</p>" +
+    "<div class='tg'>no regression</div>" + items.map(li).join("") +
+    (keep.length ? "<div class='tg'>keep</div>" + keep.map(li).join("") : "") +
+    "<div class='tsize muted'>edit size: " + editTokens(ex.new, src) + " tokens changed from the given new version (reference fix: " + t.refTokens + ")</div>";
+  $("reset").addEventListener("click", function () { cmNew.setValue(ex.new); });
 }
 
 // ---------------------------------------------------------------- ARDiff-lite (z3 in the browser)
@@ -254,12 +312,14 @@ function rawLog() {
 }
 // the original ARDiff's output for an unedited example, on the published site (raw.html, written by unified_report.py)
 function origRaw() {
+  if (EVAL) return null;
   if (curEx === null || !EX[curEx] || cmOld.getValue() !== EX[curEx].old || cmNew.getValue() !== EX[curEx].new) return null;
   if (EX[curEx].group !== EX[0].group) return null;      // the site runs ARDiff on the first example folder only
   return "raw.html#" + EX[curEx].name;
 }
 
 function renderLite() {
+  renderTask();
   var box = $("lite"), r = lite.result;
   if (lite.error) { box.innerHTML = "<div class='lh'><b>ARDiff-lite</b><span class='muted'>unavailable: " + esc(lite.error) + "</span></div>"; return; }
   if (!r) return;
@@ -294,6 +354,7 @@ function renderLite() {
       runs = runs.filter(function (j) { return sig(j) !== s; }); runs.unshift(i); renderIns(); renderRawTests(); bind();
       if (runs.indexOf(st.run) < 0) st.run = i;
     }
+    renderTask();      // the tests now include the counterexample
   }
   paint();
 }
@@ -527,8 +588,9 @@ function draw() {
 
 function load(i) {
   curEx = i;
-  var ex = EX[i];
-  cmOld.setValue(ex.old); cmNew.setValue(ex.new);
+  var ex = EX[i], saved = null;
+  if (EVAL) { try { saved = localStorage.getItem("eval:" + ex.name); } catch (e) { } }
+  cmOld.setValue(ex.old); cmNew.setValue(saved || ex.new);
   clearTimeout(timer); update();
 }
 
@@ -537,17 +599,33 @@ window.addEventListener("load", function () {
   try { if (localStorage.getItem("pg-mode") === "raw") { rawMode = true; document.body.classList.add("rawmode"); document.querySelectorAll(".top .mode button").forEach(function (b) { b.setAttribute("aria-pressed", b.dataset.mode === "raw" ? "true" : "false"); }); } } catch (e) { }
   cmOld = mk("old"); cmNew = mk("new");
   var sel = $("ex");
-  // one group per example folder
-  var groups = []; EX.forEach(function (e, i) { var g = groups[groups.length - 1]; if (!g || g.name !== e.group) groups.push(g = {name: e.group, items: []}); g.items.push(i); });
-  sel.innerHTML = "<option value=''>— new (skeleton) —</option>" + groups.map(function (g) {
-    var opts = g.items.map(function (i) { return "<option value='" + i + "'>" + esc(EX[i].name) + "</option>"; }).join("");
-    return groups.length > 1 ? "<optgroup label='" + esc(g.name || "") + "'>" + opts + "</optgroup>" : opts;
-  }).join("");
-  sel.addEventListener("change", function () { if (sel.value === "") { curEx = null; cmOld.setValue(SKELETON.old); cmNew.setValue(SKELETON.new); clearTimeout(timer); update(); } else load(+sel.value); });
-  // start empty; a link like playground.html#PartialChangeNEq opens that example
-  var start = null, hm = /^#(\w+)$/.exec(location.hash);
-  if (hm) EX.forEach(function (e, i) { if (e.name.replace(/\W/g, "") === hm[1]) start = i; });
-  if (start !== null) { sel.value = start; load(start); } else { sel.value = ""; cmOld.setValue(SKELETON.old); cmNew.setValue(SKELETON.new); clearTimeout(timer); update(); }
+  if (EVAL) {
+    // the task page: old is fixed, the new version is the participant's
+    document.title = "Regression Repair Tasks";
+    document.querySelector(".top h1").textContent = "Regression Repair Tasks";
+    document.querySelector(".top label").textContent = "task";
+    document.querySelector(".top .note").textContent = "fix the new version: remove the regression, keep the listed changes";
+    if (cmOld.setOption) cmOld.setOption("readOnly", true);
+    document.querySelector("label[for=old]").textContent = "old version (fixed)";
+    document.querySelector("label[for=new]").textContent = "new version (edit this)";
+    if (/[?&]viz=0\b/.test(location.search)) document.body.classList.add("noviz");
+    sel.innerHTML = EX.map(function (e, i) { return "<option value='" + i + "'>" + esc(EVAL[e.name].title) + "</option>"; }).join("");
+    sel.addEventListener("change", function () { load(+sel.value); });
+    var ti = 0; EX.forEach(function (e, i) { if ("#" + e.name === location.hash) ti = i; });
+    sel.value = ti; load(ti);
+  } else {
+    // one group per example folder
+    var groups = []; EX.forEach(function (e, i) { var g = groups[groups.length - 1]; if (!g || g.name !== e.group) groups.push(g = {name: e.group, items: []}); g.items.push(i); });
+    sel.innerHTML = "<option value=''>— new (skeleton) —</option>" + groups.map(function (g) {
+      var opts = g.items.map(function (i) { return "<option value='" + i + "'>" + esc(EX[i].name) + "</option>"; }).join("");
+      return groups.length > 1 ? "<optgroup label='" + esc(g.name || "") + "'>" + opts + "</optgroup>" : opts;
+    }).join("");
+    sel.addEventListener("change", function () { if (sel.value === "") { curEx = null; cmOld.setValue(SKELETON.old); cmNew.setValue(SKELETON.new); clearTimeout(timer); update(); } else load(+sel.value); });
+    // start empty; a link like playground.html#PartialChangeNEq opens that example
+    var start = null, hm = /^#(\w+)$/.exec(location.hash);
+    if (hm) EX.forEach(function (e, i) { if (e.name.replace(/\W/g, "") === hm[1]) start = i; });
+    if (start !== null) { sel.value = start; load(start); } else { sel.value = ""; cmOld.setValue(SKELETON.old); cmNew.setValue(SKELETON.new); clearTimeout(timer); update(); }
+  }
   window.addEventListener("resize", draw);
   $("svw").addEventListener("scroll", function () {});
   if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener("loadingdone", draw);

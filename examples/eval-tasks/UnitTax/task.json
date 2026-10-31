@@ -1,0 +1,5 @@
+{
+ "title": "Tax per unit",
+ "goal": "The tax is now computed from the unit price. Make the total the same as the old version again; if the per-unit form cannot be kept, say why and undo it.",
+ "keep": []
+}

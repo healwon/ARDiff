@@ -2,7 +2,7 @@
 """ARDiff's own output, file by file, for comparing against the visualization.
 
 usage: raw_report.py OUT.html PAIR_DIR...     (also written by unified_report.py as raw.html)
-Pair k is addressed as OUT.html#u<k> (its id on the unified page) or by name, e.g. OUT.html#Grade/NEq.
+Pair k is addressed as OUT.html#u<k> (its id on the unified page) or by name, e.g. OUT.html#Overtime/NEq.
 """
 import glob, html, json, os, re, sys
 
@@ -97,7 +97,7 @@ var cur = null, sel = [0, 0];
 function cls(v) { return v === "EQUIVALENT" ? "eq" : v === "NOT EQUIVALENT" ? "neq" : "unk"; }
 function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]; }); }
 function show(uid) {
-  // by page id (u3) or by example name (Grade/NEq, as the playground links)
+  // by page id (u3) or by example name (Overtime/NEq, as the playground links)
   uid = decodeURIComponent(uid);
   cur = DATA.filter(function (p) { return p.uid === uid || p.name === uid || p.name.slice(-uid.length - 1) === "/" + uid; })[0] || (uid ? null : DATA[0]);
   if (!cur) {

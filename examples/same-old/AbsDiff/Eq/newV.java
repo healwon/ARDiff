@@ -1,11 +1,16 @@
 public class newV {
-    // three edits that keep each path: the difference written as -b + a, the test as 0 > d, the flip as 0 - d
+    // order the two values first, then subtract the smaller from the larger
     public static double snippet(int a, int b) {
+        int hi = 0;
+        int lo = 0;
         int d = 0;
-        d = -b + a;
-        if (0 > d) {
-            d = 0 - d;
+        hi = a;
+        lo = b;
+        if (b > a) {
+            hi = b;
+            lo = a;
         }
+        d = hi - lo;
         return d;
     }
 }

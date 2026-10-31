@@ -397,7 +397,7 @@ function run(method, inputs, opts) {
     else if (x instanceof JavaError) out = {value: x.name, error: true};
     else throw x;
   }
-  out.trace = trace;
+  out.trace = trace; out.steps = steps;
   return out;
 }
 

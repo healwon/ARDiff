@@ -1,0 +1,20 @@
+{
+ "title": "Step by two",
+ "goal": "The loop now steps over the even numbers directly instead of testing each number. Keep that speed-up, but make the sum the same as the old version again.",
+ "keep": [
+  {
+   "desc": "no parity test: the loop does not use %",
+   "type": "absent",
+   "re": "%"
+  },
+  {
+   "desc": "the loop still steps by 2",
+   "type": "contains",
+   "re": "i\\s*=\\s*i\\s*\\+\\s*2|i\\s*\\+=\\s*2"
+  },
+  {
+   "desc": "as fast as the given new version (no more executed steps on the tested inputs)",
+   "type": "steps"
+  }
+ ]
+}

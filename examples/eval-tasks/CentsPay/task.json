@@ -1,0 +1,16 @@
+{
+ "title": "Pay in cents",
+ "goal": "Money is now counted in cents (x100). Keep cents everywhere, but make the bonus decision the same as the old version again.",
+ "keep": [
+  {
+   "desc": "the base pay stays in cents: hours * 1000",
+   "type": "contains",
+   "re": "hours\\s*\\*\\s*1000"
+  },
+  {
+   "desc": "the fixed part stays in cents: base + 500",
+   "type": "contains",
+   "re": "base\\s*\\+\\s*500"
+  }
+ ]
+}

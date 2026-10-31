@@ -1,0 +1,21 @@
+{
+ "title": "Named thresholds",
+ "goal": "The thresholds were given names (pass, top) and the top grade now adds 1 to the first grade. Keep that, but make the result the same as the old version again.",
+ "keep": [
+  {
+   "desc": "the thresholds stay named: int pass = 60 and int top = pass + 30",
+   "type": "contains",
+   "re": "int\\s+pass\\s*=\\s*60\\s*;[\\s\\S]*int\\s+top\\s*=\\s*pass\\s*\\+\\s*30\\s*;"
+  },
+  {
+   "desc": "the tests use the names, not the numbers 60 or 90",
+   "type": "absent",
+   "re": "if\\s*\\([^)]*\\b(60|90)\\b"
+  },
+  {
+   "desc": "the top grade still adds 1: g = g + 1",
+   "type": "contains",
+   "re": "g\\s*=\\s*g\\s*\\+\\s*1\\s*;"
+  }
+ ]
+}

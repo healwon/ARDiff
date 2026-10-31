@@ -161,9 +161,10 @@ jobs:
           fi
           # live playground (edit code in the browser; "Run ARDiff on GitHub" goes through ardiff-issue.yml)
           z3=(); [ -f "$RUNNER_TEMP/z3assets/z3-built.wasm" ] && z3=(--z3 "$RUNNER_TEMP/z3assets")
-          # examples: three same-old pairs, then every benchmark (one group each)
-          pick=(); [ "$PAIRS_ROOT" = examples/same-old ] && pick=(--pick Grade,Overtime,TaxQty)
-          python3 refinement/playground/build_playground.py _site/playground.html --examples "$PAIRS_ROOT" "${pick[@]}" --benchmarks benchmarks "${z3[@]}"
+          # examples: the pairs ARDiff ran on, the evaluation tasks (old/new only), then every benchmark (one group each)
+          python3 refinement/playground/build_playground.py _site/playground.html --examples "$PAIRS_ROOT" --examples eval-tasks=examples/eval-tasks --benchmarks benchmarks "${z3[@]}"
+          # the task page: fix the new version of each evaluation task, checked live (regression gone, listed changes kept)
+          python3 refinement/playground/build_playground.py _site/eval.html --eval examples/eval-tasks "${z3[@]}"
           # ARDiff inputs and logs per method, for anyone who wants the raw data
           if [ -d "$r/pairs" ]; then
             mkdir -p _site/pairs
