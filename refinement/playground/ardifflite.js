@@ -16,7 +16,7 @@
 (function (root) {
 "use strict";
 var Engine = root.Engine;
-var UNROLL = 10, MIN = -100, MAX = 100, MAX_TERM = 200;
+var UNROLL = 10, MIN = -100, MAX = 100, MAX_TERM = 200, TIME_LIMIT = 90000;
 
 function Unsupported(m) { this.message = m; }
 
@@ -47,9 +47,18 @@ function varsRead(node, out) {
   }
   return out;
 }
+function exprWrites(node, out) {
+  if (Array.isArray(node)) {
+    if ((node[0] === "assignx" || node[0] === "preinc" || node[0] === "postinc") && !(node[1] in out)) out[node[1]] = null;
+    node.forEach(function (x) { if (x && typeof x === "object") exprWrites(x, out); });
+  }
+  return out;
+}
 function varsDefined(s, out) {
   out = out || {};
   if (!s) return out;
+  ["e", "cond", "idx"].forEach(function (k) { if (s[k]) exprWrites(s[k], out); });
+  if (s.k === "decl") s.vars.forEach(function (v) { if (v[1]) exprWrites(v[1], out); });
   if (s.k === "decl") s.vars.forEach(function (v) { out[v[0]] = s.type; });
   else if (s.k === "assign" || s.k === "astore") out[s.name] = out[s.name] || null;
   else if (s.k === "block") s.body.forEach(function (x) { varsDefined(x, out); });
@@ -82,16 +91,25 @@ function opaque(node, methods) {
 }
 
 // replace common statements (not yet refined) by UF nodes
-function abstract(stmts, side, maps, concrete, seen, methods) {
+// variables an array size is computed from (new int[NTAB]): they must stay concrete so the size is a constant
+function sizeVars(node, out) {
+  out = out || {};
+  if (Array.isArray(node)) { if (node[0] === "newarr") varsRead(node[2], out); node.forEach(function (x) { if (x && typeof x === "object") sizeVars(x, out); }); }
+  else if (node && typeof node === "object") for (var k in node) if (node[k] && typeof node[k] === "object") sizeVars(node[k], out);
+  return out;
+}
+function abstract(stmts, side, maps, concrete, seen, methods, keep) {
+  keep = keep || {};
   return stmts.map(function (s) {
     var id = commonId(s, side, maps);
-    if (id !== null && !concrete[id] && !hasReturn(s) && Object.keys(varsDefined(s)).length && !opaque(s, methods)) {
+    if (id !== null && !concrete[id] && !hasReturn(s) && Object.keys(varsDefined(s)).length && !opaque(s, methods) &&
+        !Object.keys(varsDefined(s)).some(function (v) { return keep[v]; })) {
       seen[id] = seen[id] || {line: id, text: null, side: side};
       return {k: "uf", id: id, defs: varsDefined(s), reads: varsRead(s), l0: s.l0, l1: s.l1};
     }
-    if (s.k === "block") return Object.assign({}, s, {body: abstract(s.body, side, maps, concrete, seen, methods)});
-    if (s.k === "if") return Object.assign({}, s, {then: abstract([s.then], side, maps, concrete, seen, methods)[0], els: s.els ? abstract([s.els], side, maps, concrete, seen, methods)[0] : null});
-    if (s.k === "loop") return Object.assign({}, s, {body: abstract([s.body], side, maps, concrete, seen, methods)[0]});
+    if (s.k === "block") return Object.assign({}, s, {body: abstract(s.body, side, maps, concrete, seen, methods, keep)});
+    if (s.k === "if") return Object.assign({}, s, {then: abstract([s.then], side, maps, concrete, seen, methods, keep)[0], els: s.els ? abstract([s.els], side, maps, concrete, seen, methods, keep)[0] : null});
+    if (s.k === "loop") return Object.assign({}, s, {body: abstract([s.body], side, maps, concrete, seen, methods, keep)[0]});
     return s;
   });
 }
@@ -110,9 +128,17 @@ Sym.prototype = {
   },
   share: function (sort, term) { return term.length <= MAX_TERM ? term : this.fresh(sort, term); },
   num: function (t) {
-    var s = t.replace(/[lLdDfF]$/, "");
-    if (/[.eE]/.test(s) || /[dDfF]$/.test(t)) { var v = parseFloat(s); var r = Math.abs(v).toFixed(12).replace(/0+$/, "").replace(/\.$/, ".0"); return ["Real", v < 0 ? "(- " + r + ")" : r]; }
-    return ["Int", String(parseInt(s, 10))];
+    var n = Engine.numLit(t);
+    return n.isInt ? ["Int", n.v < 0 ? "(- " + (-n.v) + ")" : String(n.v)] : this.real(n.v);
+  },
+  real: function (v) {
+    if (!isFinite(v)) throw new Unsupported("infinite or NaN constant");
+    // exact decimal from the shortest round-trip form: digits * 10^exp, as an SMT-LIB rational
+    var m = /^(\d+)(?:\.(\d+))?(?:e([-+]\d+))?$/.exec(String(Math.abs(v)));
+    var digits = (m[1] + (m[2] || "")).replace(/^0+(?=\d)/, ""), exp = (+(m[3] || 0)) - (m[2] || "").length, r;
+    if (exp >= 0) r = digits + "0".repeat(exp) + ".0";
+    else r = "(/ " + digits + ".0 1" + "0".repeat(-exp) + ".0)";
+    return ["Real", v < 0 ? "(- " + r + ")" : r];
   },
   unify: function (a, b) {
     if (a[0] === b[0]) return [a[0], a[1], b[1]];
@@ -125,7 +151,16 @@ Sym.prototype = {
     switch (e[0]) {
       case "num": return this.num(e[1]);
       case "bool": return ["Bool", e[1] ? "true" : "false"];
-      case "var": if (!(e[1] in env)) throw new Unsupported("unknown variable " + e[1]); return env[e[1]];
+      case "var":
+        if (e[1] in env) return env[e[1]];
+        var mc = Engine.MATHC[e[1].replace(/^java\.lang\./, "")];
+        if (mc !== undefined) return e[1].indexOf("Integer.") >= 0 ? this.num(String(mc)) : this.real(mc);
+        throw new Unsupported("unknown variable " + e[1]);
+      case "preinc": case "postinc":
+        var was = this.ev(["var", e[1]], env, sorts), one = was[0] === "Real" ? "1.0" : "1";
+        this.assign(env, sorts, e[1], [was[0], "(" + e[2] + " " + was[1] + " " + one + ")"]);
+        return e[0] === "preinc" ? env[e[1]] : was;
+      case "str": throw new Unsupported("strings are not supported");
       case "assignx": this.assign(env, sorts, e[1], this.ev(e[2], env, sorts)); return env[e[1]];
       case "neg": a = this.ev(e[1], env, sorts); return [a[0], "(- " + a[1] + ")"];
       case "aget":
@@ -151,6 +186,7 @@ Sym.prototype = {
         var c = this.ev(e[1], env, sorts); u = this.unify(this.ev(e[2], env, sorts), this.ev(e[3], env, sorts));
         return [u[0], "(ite " + c[1] + " " + u[1] + " " + u[2] + ")"];
       case "call":
+        if (/^(?:java\.lang\.)?System\.(out|err)\.print/.test(e[1])) return ["Int", "0"];      // output is not part of the result
         var args = e[2].map(function (x) { return self.ev(x, env, sorts); }), f = e[1].replace(/^java\.lang\./, "");
         var callee = this.methods[f + "/" + args.length] && this.all[f + "/" + args.length];
         if (callee) return this.call(callee, args, env);
@@ -199,10 +235,15 @@ Sym.prototype = {
   run: function (stmts, env, sorts) {
     var self = this;
     stmts.forEach(function (s) {
-      var done = env.__done[1], before = Object.assign({}, env);
+      var done = self.stopped(env), before = Object.assign({}, env);
       self.step(s, env, sorts);
       if (done !== "false") Object.keys(env).forEach(function (v) { if (v in before && env[v] !== before[v]) env[v] = self.iteVal(done, before[v], env[v]); });
     });
+  },
+  // the path has returned, or left the current loop iteration by break / continue
+  stopped: function (env) {
+    var xs = [env.__done[1], env.__brk[1], env.__cont[1]].filter(function (x) { return x !== "false"; });
+    return !xs.length ? "false" : xs.length === 1 ? xs[0] : "(or " + xs.join(" ") + ")";
   },
   conv: function (val, want) {
     if (val[0] === want || want === "Arr") return val;
@@ -226,7 +267,7 @@ Sym.prototype = {
   // a call to a method of the class, inlined: its own locals, return value and exception flag
   call: function (m, args, env) {
     if (this.depth >= 8) throw new Unsupported("recursion is not supported");
-    var cenv = {__done: ["Bool", "false"], __exc: ["Bool", "false"], __rsort: m.ret === "void" ? "Int" : SORT[TYPE[m.ret]]}, csorts = {}, self = this;
+    var cenv = {__done: ["Bool", "false"], __brk: ["Bool", "false"], __cont: ["Bool", "false"], __exc: ["Bool", "false"], __rsort: m.ret === "void" ? "Int" : SORT[TYPE[m.ret]]}, csorts = {}, self = this;
     cenv.__ret = [cenv.__rsort, cenv.__rsort === "Real" ? "0.0" : cenv.__rsort === "Bool" ? "false" : "0"];
     m.params.forEach(function (p, i) { csorts[p.name] = SORT[p.type]; cenv[p.name] = self.conv(args[i], SORT[p.type]); cenv[p.name] = [SORT[p.type], self.share(SORT[p.type], cenv[p.name][1])]; });
     this.depth++;
@@ -247,6 +288,7 @@ Sym.prototype = {
         });
         return;
       case "assign": this.assign(env, sorts, s.name, this.ev(s.e, env, sorts)); return;
+      case "expr": this.ev(s.e, env, sorts); return;
       case "astore":
         var arr = env[s.name], at = this.index(env, sorts, arr, s.idx), v = this.conv(this.ev(s.e, env, sorts), arr[1].sort)[1];
         v = this.share(arr[1].sort, v);
@@ -263,18 +305,25 @@ Sym.prototype = {
         return;
       case "loop":
         this.bounded = true;
+        var outer = [env.__brk, env.__cont], F = ["Bool", "false"];
+        env.__brk = F; env.__cont = F;
         if (s.init) this.step(s.init, env, sorts);
-        if (s.isDo) this.run([s.body], env, sorts);
+        // one iteration: the body, then (unless it broke out) the update; continue only skips the rest of the body
+        var iter = function (e, so) { self.run([s.body], e, so); e.__cont = F; if (s.upd) self.run([s.upd], e, so); };
+        if (s.isDo) iter(env, sorts);
         for (var i = 0; i < UNROLL; i++) {
           c = this.ev(s.cond, env, sorts);
-          var g = env.__done[1] === "false" ? c[1] : "(and " + c[1] + " (not " + env.__done[1] + "))";
+          var stop = this.stopped(env), g = stop === "false" ? c[1] : "(and " + c[1] + " (not " + stop + "))";
           var body = Object.assign({}, env), bs = Object.assign({}, sorts);
-          this.run([s.body].concat(s.upd ? [s.upd] : []), body, bs);
+          iter(body, bs);
           this.merge(env, g, body, Object.assign({}, env));
         }
         c = this.ev(s.cond, env, sorts);
-        this.assume.push("(or (not " + c[1] + ") " + env.__done[1] + ")");
+        this.assume.push("(or (not " + c[1] + ") " + this.stopped(env) + ")");
+        env.__brk = outer[0]; env.__cont = outer[1];
         return;
+      case "break": env.__brk = ["Bool", "true"]; return;
+      case "continue": env.__cont = ["Bool", "true"]; return;
       case "return":
         var want = env.__rsort || "Real", r = s.e ? this.conv(this.ev(s.e, env, sorts), want) : [want, env.__ret[1]];
         env.__ret = [want, this.share(want, r[1])];
@@ -292,7 +341,6 @@ Sym.prototype = {
           env[v] = [sort, args.length ? "(" + nm + " " + args.map(function (x) { return env[x][1]; }).join(" ") + ")" : nm];
         });
         return;
-      case "break": case "continue": throw new Unsupported(s.k + " is not supported");
     }
   }
 };
@@ -305,7 +353,7 @@ var PRELUDE = "(define-fun jdiv ((a Int) (b Int)) Int (ite (>= a 0) (ite (> b 0)
 function buildQuery(mo, mn, ao, an) {
   var sym = new Sym(), envs = [];
   [[mo, ao], [mn, an]].forEach(function (p) {
-    var env = {__done: ["Bool", "false"], __ret: ["Real", "ret_none"], __exc: ["Bool", "false"]}, sorts = {};
+    var env = {__done: ["Bool", "false"], __brk: ["Bool", "false"], __cont: ["Bool", "false"], __ret: ["Real", "ret_none"], __exc: ["Bool", "false"]}, sorts = {};
     p[0].params.forEach(function (q) { env[q.name] = [SORT[q.type], q.name]; sorts[q.name] = SORT[q.type]; });
     sym.methods = p[1]; sym.all = p[0].methods;
     sym.run(p[1][p[0].key], env, sorts);
@@ -348,9 +396,15 @@ async function analyze(oldSrc, newSrc, z3eval, onStep) {
   var maps = lineMaps(oldSrc, newSrc), oldLines = oldSrc.split("\n");
   var changed = []; for (var l = 1; l <= oldLines.length; l++) if (!maps.o2n[l] && !maps.blankOld[l - 1]) changed.push(l);
   var concrete = {}, iters = [], verdict = null, reason = null, cex = null;
+  var started = Date.now();
   for (var it = 0; it < 60; it++) {
+    if (Date.now() - started > TIME_LIMIT) { verdict = "UNKNOWN"; reason = "time limit (" + TIME_LIMIT / 1000 + " s)"; break; }
     var seen = {};
-    var absAll = function (m, side) { var out = {}; Object.keys(m.methods).forEach(function (k) { out[k] = abstract(m.methods[k].stmts, side, maps, concrete, seen, m.methods); }); return out; };
+    var absAll = function (m, side) {
+      var out = {};
+      Object.keys(m.methods).forEach(function (k) { out[k] = abstract(m.methods[k].stmts, side, maps, concrete, seen, m.methods, sizeVars(m.methods[k].stmts)); });
+      return out;
+    };
     var q = buildQuery(mo, mn, absAll(mo, "old"), absAll(mn, "new"));
     var out = (await z3eval(q.smt)).trim(), status = out.split("\n")[0].trim();
     var rec = {iter: it, abstracted: Object.keys(seen).map(Number).sort(function (a, b) { return a - b; }), status: status, bounded: q.bounded,
@@ -365,7 +419,8 @@ async function analyze(oldSrc, newSrc, z3eval, onStep) {
     var inputs = null;
     if (status === "sat") {
       inputs = {};
-      var vals = sexprs(out.slice(out.indexOf("\n") + 1))[0] || [];
+      var vals = out.indexOf("\n") >= 0 ? sexprs(out.slice(out.indexOf("\n") + 1))[0] : null;
+      if (!Array.isArray(vals)) vals = [];
       vals.forEach(function (p) { if (Array.isArray(p)) inputs[p[0]] = value(p[1]); });
       mo.params.forEach(function (p) { if (!(p.name in inputs)) inputs[p.name] = 0; });
       rec.model = inputs;

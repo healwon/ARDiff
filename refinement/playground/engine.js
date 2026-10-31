@@ -10,6 +10,14 @@ var MAX_STEPS = 20000;
 
 function Unsupported(msg) { this.message = msg; }
 
+// a numeric literal: {v, isInt}; hex is an int (or long, kept as 32 bits)
+function numLit(t) {
+  if (/^0[xX]/.test(t)) return {v: parseInt(t.replace(/[lL]$/, "").slice(2), 16) | 0, isInt: true};
+  var s = t.replace(/[lLdDfF]$/, "");
+  if (/[.eE]/.test(s) || /[dDfF]$/.test(t)) return {v: parseFloat(s), isInt: false};
+  return {v: parseInt(s, 10) | 0, isInt: true};
+}
+
 // ---------------------------------------------------------------- text helpers
 function stripComments(src) {
   var out = "", i = 0, n = src.length;
@@ -31,7 +39,7 @@ function matchBrace(s, i) {
 }
 
 // ---------------------------------------------------------------- tokens
-var TOK = /\s*(?:(\d+\.\d*(?:[eE][-+]?\d+)?[dDfF]?|\.\d+(?:[eE][-+]?\d+)?[dDfF]?|\d+[eE][-+]?\d+[dDfF]?|\d+[lLdDfF]?)|([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)|(>>>=|<<=|>>=|>>>|\+\+|--|&&|\|\||==|!=|<=|>=|\+=|-=|\*=|\/=|%=|<<|>>|[-+*\/%<>=!?:;,(){}\[\]&|^~]))/y;
+var TOK = /\s*(?:(0[xX][0-9a-fA-F]+[lL]?|\d+\.\d*(?:[eE][-+]?\d+)?[dDfF]?|\.\d+(?:[eE][-+]?\d+)?[dDfF]?|\d+[eE][-+]?\d+[dDfF]?|\d+[lLdDfF]?)|([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)|(>>>=|<<=|>>=|>>>|\+\+|--|&&|\|\||==|!=|<=|>=|\+=|-=|\*=|\/=|%=|<<|>>|[-+*\/%<>=!?:;,(){}\[\]&|^~])|("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)+'))/y;
 
 function tokenize(text, line0) {
   var out = [], pos = 0, line = line0;
@@ -40,8 +48,8 @@ function tokenize(text, line0) {
     TOK.lastIndex = pos;
     var m = TOK.exec(text);
     if (!m) throw new Unsupported("unexpected '" + text.slice(pos, pos + 12).trim() + "'");
-    var kind = m[1] !== undefined ? "num" : m[2] !== undefined ? "id" : "op";
-    var tok = m[1] || m[2] || m[3];
+    var kind = m[1] !== undefined ? "num" : m[2] !== undefined ? "id" : m[4] !== undefined ? "str" : "op";
+    var tok = m[1] || m[2] || m[3] || m[4];
     var start = m.index + m[0].indexOf(tok);
     line += (text.slice(pos, start).match(/\n/g) || []).length;
     out.push({k: kind, t: tok, line: line});
@@ -128,6 +136,10 @@ Parser.prototype = {
       var op0 = this.take().t, nm = this.take().t, e0 = this.takeAny(terms).line;
       return {k: "assign", name: nm, e: ["bin", op0[0], ["var", nm], ["num", "1"]], l0: line, l1: e0};
     }
+    if (x.k === "id" && this.peek(1).t === "(") {
+      // a call as a statement, e.g. System.out.println(..) or helper(x);
+      var ce = this.expr(); return {k: "expr", e: ce, l0: line, l1: this.takeAny(terms).line};
+    }
     if (x.k === "id" && this.peek(1).t === "[") {
       var an2 = this.take().t; this.take("["); var idx = this.expr(); this.take("]");
       var aop = this.take().t, ae;
@@ -161,15 +173,24 @@ Parser.prototype = {
   unary: function () {
     var t = this.peek().t;
     if (t === "-" || t === "+" || t === "!" || t === "~") { this.take(); var e = this.unary(); return t === "-" ? ["neg", e] : t === "!" ? ["not", e] : t === "~" ? ["bnot", e] : e; }
+    if ((t === "++" || t === "--") && this.peek(1).k === "id" && this.peek(2).t !== "[") { this.take(); return ["preinc", this.take().t, t[0]]; }
     if (t === "(" && TYPES[this.peek(1).t] && this.peek(2).t === ")") { this.take("("); var ty = TYPES[this.take().t]; this.take(")"); return ["cast", ty, this.unary()]; }
     var p = this.primary();
-    if (this.at("++") || this.at("--")) throw new Unsupported("x++ inside an expression is not supported");
+    if (this.at("++") || this.at("--")) {
+      if (p[0] !== "var") throw new Unsupported("++/-- on an array element inside an expression is not supported");
+      return ["postinc", p[1], this.take().t[0]];
+    }
     return p;
   },
   primary: function () {
     var x = this.peek();
     if (x.t === "(") { this.take("("); var e = this.expr(); this.take(")"); return e; }
     if (x.k === "num") { this.take(); return ["num", x.t]; }
+    if (x.k === "str") {
+      this.take();
+      if (x.t[0] === "'") { var ch = JSON.parse('"' + x.t.slice(1, -1).replace(/\\'/g, "'").replace(/"/g, '\\"') + '"'); return ["num", String(ch.charCodeAt(0))]; }
+      return ["str", x.t];
+    }
     if (x.t === "true" || x.t === "false") { this.take(); return ["bool", x.t === "true"]; }
     if (x.t === "new" && TYPES[this.peek(1).t] && this.peek(2).t === "[") {
       this.take(); var nt = TYPES[this.take().t]; this.take("["); var size = this.expr(); this.take("]"); return ["newarr", nt, size];
@@ -217,6 +238,17 @@ function parseMethod(src) {
 
 // ---------------------------------------------------------------- interpreter (Java semantics for int/double)
 function JavaError(name) { this.name = name; }
+var MATHC = {"Math.PI": Math.PI, "Math.E": Math.E, "Integer.MAX_VALUE": 2147483647, "Integer.MIN_VALUE": -2147483648,
+             "Double.MAX_VALUE": Number.MAX_VALUE, "Double.MIN_VALUE": Number.MIN_VALUE, "Double.POSITIVE_INFINITY": Infinity,
+             "Double.NEGATIVE_INFINITY": -Infinity, "Double.NaN": NaN};
+// Math.getExponent(double): the unbiased binary exponent
+function getExponent(x) {
+  if (!isFinite(x)) return 1024;
+  if (x === 0) return -1023;
+  var e = Math.floor(Math.log2(Math.abs(x)));
+  if (Math.abs(x) / Math.pow(2, e) >= 2) e++; else if (Math.abs(x) / Math.pow(2, e) < 1) e--;
+  return Math.max(e, -1023);
+}
 function Ret(v) { this.v = v; }
 function Brk() {}
 function Cont() {}
@@ -247,7 +279,9 @@ function run(method, inputs, opts) {
   function tick(line) { if (++steps > MAX_STEPS) throw new JavaError("timeout"); if (opts.trace && line) trace.push(line); }
   function typeOf(e) {
     switch (e[0]) {
-      case "num": return /[.eEdDfF]/.test(e[1]) && !/^0x/i.test(e[1]) ? "D" : "I";
+      case "num": return numLit(e[1]).isInt ? "I" : "D";
+      case "preinc": case "postinc": return types[e[1]] || "I";
+      case "str": return "S";
       case "bool": case "not": return "Z";
       case "var": return types[e[1]] || "I";
       case "assignx": return types[e[1]] || "I";
@@ -269,9 +303,16 @@ function run(method, inputs, opts) {
   }
   function ev(e) {
     switch (e[0]) {
-      case "num": var s = e[1].replace(/[lLdDfF]$/, ""); return /[.eE]/.test(s) || /[dDfF]$/.test(e[1]) ? parseFloat(s) : parseInt(s, 10) | 0;
+      case "num": return numLit(e[1]).v;
       case "bool": return e[1];
-      case "var": if (!(e[1] in env)) throw new Unsupported("unknown variable '" + e[1] + "'"); return env[e[1]];
+      case "var":
+        if (e[1] in env) return env[e[1]];
+        if (MATHC[e[1].replace(/^java\.lang\./, "")] !== undefined) return MATHC[e[1].replace(/^java\.lang\./, "")];
+        throw new Unsupported("unknown variable '" + e[1] + "'");
+      case "str": return e[1];
+      case "preinc": case "postinc":
+        var was = ev(["var", e[1]]); assign(e[1], ev(["bin", e[2], ["num", String(was)], ["num", "1"]]), types[e[1]]);
+        return e[0] === "preinc" ? env[e[1]] : was;
       case "assignx": var v = ev(e[2]); assign(e[1], v, typeOf(e[2])); return env[e[1]];
       case "neg": var x = ev(e[1]); return typeOf(e[1]) === "I" ? (-x) | 0 : -x;
       case "not": return !ev(e[1]);
@@ -288,6 +329,8 @@ function run(method, inputs, opts) {
       case "call":
         var args = e[2].map(ev), f = e[1].replace(/^java\.lang\./, "");
         if (methods[f + "/" + args.length]) return invoke(methods[f + "/" + args.length], args);
+        if (/^System\.(out|err)\.print/.test(f)) return undefined;      // output is not part of the result
+        if (f === "Math.getExponent") return getExponent(args[0]);
         if (f === "Math.min") return Math.min(args[0], args[1]);
         if (f === "Math.max") return Math.max(args[0], args[1]);
         if (f === "Math.abs") return typeOf(e[2][0]) === "I" ? Math.abs(args[0]) | 0 : Math.abs(args[0]);
@@ -330,6 +373,7 @@ function run(method, inputs, opts) {
         var sa = arr(s.name), si = ev(s.idx), sv = ev(s.e);
         sa[index(sa, si)] = conv(sv, (types[s.name] || "AI").slice(1)); return;
       case "assign": tick(s.l0); assign(s.name, ev(s.e), typeOf(s.e)); return;
+      case "expr": tick(s.l0); ev(s.e); return;
       case "if": tick(s.l0); if (ev(s.cond)) exec(s.then); else if (s.els) exec(s.els); return;
       case "loop":
         if (s.init) { tick(s.l0); exec(s.init); }
@@ -509,9 +553,9 @@ function analyze(oldSrc, newSrc, opts) {
   }
   var consts = [];
   (stripComments(oldSrc) + "\n" + stripComments(newSrc)).replace(/\b\d+\b(?!\.)/g, function (m) { var v = +m; if (consts.indexOf(v) < 0) consts.push(v); return m; });
-  var inputs = inputSet(mo.params, 2500, consts), keys = {};
+  var inputs = inputSet(mo.params, 2500, consts), keys = {}, extra = [];
   inputs.forEach(function (x) { keys[JSON.stringify(x)] = 1; });
-  ((opts && opts.extra) || []).forEach(function (x) { if (!keys[JSON.stringify(x)]) { keys[JSON.stringify(x)] = 1; inputs.push(x); } });
+  ((opts && opts.extra) || []).forEach(function (x) { if (!keys[JSON.stringify(x)]) { keys[JSON.stringify(x)] = 1; extra.push(x); } });
   // a hybrid may use a variable that only the other version declares: declare it as that version does
   function withDecls(stmts, other) {
     var have = {}; stmts.forEach(function (s) { if (s.k === "decl") s.vars.forEach(function (v) { have[v[0]] = 1; }); });
@@ -530,7 +574,17 @@ function analyze(oldSrc, newSrc, opts) {
       try { return run(m, inp).value; } catch (e) { if (e instanceof Unsupported) return "?unsupported: " + e.message; throw e; }
     });
   }
-  var base = outcome(program(mo)), full = outcome(program(mn));
+  // time budget (the page runs this on every edit): old and new run input by input, in order (boundary
+  // values first), until their share of the budget is used; the per-change hybrids then run on the same inputs.
+  // ARDiff-lite's counterexamples are always run.
+  var share = ((opts && opts.budgetMs) || 2000) * 2 / (2 + 2 * groups.length), t0 = Date.now(), base = [], full = [];
+  var one = function (prog, inp) { try { return run({params: mo.params, ret: mo.ret, stmts: prog.stmts, methods: prog.methods}, inp).value; } catch (e) { if (e instanceof Unsupported) return "?unsupported: " + e.message; throw e; } };
+  var po = program(mo), pn = program(mn);
+  for (var k = 0; k < inputs.length; k++) {
+    if (k >= 30 && Date.now() - t0 > share) { res.capped = inputs.length; inputs = inputs.slice(0, k); break; }
+    base.push(one(po, inputs[k])); full.push(one(pn, inputs[k]));
+  }
+  extra.forEach(function (x) { inputs.push(x); base.push(one(po, x)); full.push(one(pn, x)); });
   var diffIdx = []; base.forEach(function (v, i) { if (v !== full[i]) diffIdx.push(i); });
   res.inputs = inputs; res.base = base; res.full = full; res.diffIdx = diffIdx;
   res.unsupported = base.concat(full).filter(function (v) { return typeof v === "string" && v.indexOf("?unsupported") === 0; })[0] || null;
@@ -567,5 +621,5 @@ function analyze(oldSrc, newSrc, opts) {
   return res;
 }
 
-root.Engine = {parseMethod: parseMethod, run: run, analyze: analyze, diffRows: diffRows, inputSet: inputSet, Unsupported: Unsupported, lcsOps: lcsOps, stripComments: stripComments};
+root.Engine = {numLit: numLit, MATHC: MATHC, parseMethod: parseMethod, run: run, analyze: analyze, diffRows: diffRows, inputSet: inputSet, Unsupported: Unsupported, lcsOps: lcsOps, stripComments: stripComments};
 })(typeof window !== "undefined" ? window : globalThis);

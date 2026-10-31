@@ -360,7 +360,7 @@ function render(o, n) {
   if (res.error) { $("err").textContent = res.error; $("chips").innerHTML = chips.join(""); $("cards").innerHTML = ""; $("ins").innerHTML = ""; $("tbl").innerHTML = ""; $("bar").textContent = ""; clearSvg(); clearMarks(); renderRawTests(); return; }
   var nd = res.diffIdx.length, N = res.inputs.length;
   chips.push("<span class='chip " + (nd ? "neq" : "eq") + "' title='old and new run on " + N + " boundary and random inputs; testing, not a proof'>" +
-             (nd ? nd + " of " + N + " inputs differ" : "same on " + N + " inputs") + "</span>");
+             (nd ? nd + " of " + N + " inputs differ" : "same on " + N + " inputs") + (res.capped ? " (time limit)" : "") + "</span>");
   if (res.unsupported) chips.push("<span class='chip unk'>" + esc(res.unsupported.replace("?unsupported: ", "")) + "</span>");
   $("chips").innerHTML = chips.join("");
 

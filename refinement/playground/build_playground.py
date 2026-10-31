@@ -4,9 +4,11 @@
 usage: build_playground.py OUT.html [--examples [LABEL=]DIR ...] [--report report.json ...]
   --examples  folder with <name>/<Eq|NEq>/{oldV,newV}.java, repeatable; each is a group in the example menu
               (default: <repo>/examples/same-old). Examples of the second and later folders are named LABEL/<name>/<kind>
+  --pick      names (e.g. Grade,Overtime) to keep from the first --examples folder; the rest are left out
+  --benchmarks folder of benchmarks (e.g. <repo>/benchmarks): each subfolder becomes a group, pairs found at any depth
   --report    commit_check report.json files; their ARDiff verdicts are shown for the matching examples
 """
-import argparse, json, os
+import argparse, json, os, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
@@ -16,6 +18,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
     ap.add_argument("--examples", action="append", default=[])
+    ap.add_argument("--pick", default="")
+    ap.add_argument("--benchmarks", default="")
     ap.add_argument("--report", action="append", default=[])
     ap.add_argument("--repo", default="", help="owner/name for the 'Run ARDiff on GitHub' button (issue-based runs)")
     ap.add_argument("--z3", default="", help="folder with the browser z3 assets (build_z3_assets.sh); copied next to OUT as z3/ to enable ARDiff-lite")
@@ -30,22 +34,28 @@ def main():
         except (OSError, ValueError):
             pass
 
+    specs = [s.split("=", 1) if "=" in s else (os.path.basename(os.path.normpath(s)), s)
+             for s in (a.examples or [os.path.join(REPO, "examples", "same-old")])]
+    if a.benchmarks:
+        specs += [(b, os.path.join(a.benchmarks, b)) for b in sorted(os.listdir(a.benchmarks), key=str.lower)
+                  if os.path.isdir(os.path.join(a.benchmarks, b))]
+    pick = {x for x in a.pick.split(",") if x}
     examples = []
-    for gi, spec in enumerate(a.examples or [os.path.join(REPO, "examples", "same-old")]):
-        label, root = spec.split("=", 1) if "=" in spec else (os.path.basename(os.path.normpath(spec)), spec)
+    for gi, (label, root) in enumerate(specs):
         group = []
-        for name in sorted(os.listdir(root)):
-            d = os.path.join(root, name)
-            if not os.path.isdir(d):
+        for d, subdirs, files in os.walk(root):
+            subdirs.sort()
+            if "oldV.java" not in files or "newV.java" not in files:
                 continue
-            for kind in sorted(os.listdir(d)):
-                p = os.path.join(d, kind)
-                if os.path.exists(os.path.join(p, "oldV.java")) and os.path.exists(os.path.join(p, "newV.java")):
-                    group.append({"name": (f"{label}/" if gi else "") + f"{name}/{kind}", "group": label,
-                                  "old": open(os.path.join(p, "oldV.java")).read(), "new": open(os.path.join(p, "newV.java")).read(),
-                                  "ardiff": verdicts.get(f"{name}/{kind}")})
+            subdirs[:] = []
+            rel = os.path.relpath(d, root).replace(os.sep, "/")
+            if gi == 0 and pick and rel.split("/")[0] not in pick:
+                continue
+            group.append({"name": (f"{label}/" if gi else "") + rel, "group": label,
+                          "old": open(os.path.join(d, "oldV.java")).read(), "new": open(os.path.join(d, "newV.java")).read(),
+                          "ardiff": verdicts.get("/".join(rel.split("/")[-2:]))})
         # NEq first: the interesting ones
-        examples += sorted(group, key=lambda e: (not e["name"].endswith("/NEq"), e["name"]))
+        examples += sorted(group, key=lambda e: (not re.search(r"(^|/)NEq(/|$)", e["name"]), e["name"].lower()))
 
     page = open(os.path.join(HERE, "template.html")).read()
     page = page.replace("/*__CM_CSS__*/", open(os.path.join(HERE, "codemirror-5.65.16.min.css")).read())

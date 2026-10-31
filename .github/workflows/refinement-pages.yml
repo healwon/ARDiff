@@ -161,7 +161,9 @@ jobs:
           fi
           # live playground (edit code in the browser; "Run ARDiff on GitHub" goes through ardiff-issue.yml)
           z3=(); [ -f "$RUNNER_TEMP/z3assets/z3-built.wasm" ] && z3=(--z3 "$RUNNER_TEMP/z3assets")
-          python3 refinement/playground/build_playground.py _site/playground.html --examples "$PAIRS_ROOT" --examples tcas=benchmarks/tcas "${z3[@]}"
+          # examples: three same-old pairs, then every benchmark (one group each)
+          pick=(); [ "$PAIRS_ROOT" = examples/same-old ] && pick=(--pick Grade,Overtime,TaxQty)
+          python3 refinement/playground/build_playground.py _site/playground.html --examples "$PAIRS_ROOT" "${pick[@]}" --benchmarks benchmarks "${z3[@]}"
           # ARDiff inputs and logs per method, for anyone who wants the raw data
           if [ -d "$r/pairs" ]; then
             mkdir -p _site/pairs
