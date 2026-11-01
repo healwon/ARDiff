@@ -43,6 +43,9 @@ select:focus-visible,button:focus-visible,.ev:focus-visible,.hk:focus-visible{ou
 .hk{display:grid;gap:6px;background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:9px 11px;cursor:pointer}
 .hk.changes{box-shadow:inset 4px 0 0 var(--brk)}.hk.none{box-shadow:inset 4px 0 0 var(--id)}.hk.undone,.hk.together{box-shadow:inset 4px 0 0 var(--cmp)}.hk.isolate{box-shadow:inset 4px 0 0 var(--nof)}
 .hk[aria-pressed="true"]{border-color:var(--fg)}
+/* change cards: old and new in the diff's deletion / addition colours */
+.hkd>div{padding:2px 6px;border-radius:4px}.hkd>div:first-child{background:var(--del)}.hkd>div:nth-child(2){background:var(--add)}
+.hkd>div:first-child .side{color:var(--neq);font-weight:600}.hkd>div:nth-child(2) .side{color:var(--eq);font-weight:600}
 .hkd{display:grid;gap:1px;font-size:12px}.hkd .side{display:inline-block;width:30px;font-size:10.5px;color:var(--muted)}
 .hkd code{font-family:var(--mono);font-size:12px}
 .tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.num{font-family:var(--mono);font-size:11px;color:var(--muted)}
@@ -63,6 +66,11 @@ select:focus-visible,button:focus-visible,.ev:focus-visible,.hk:focus-visible{ou
 .svw td.sel{outline:2px solid var(--fg);outline-offset:-2px}
 .svw .val{margin-left:12px;color:var(--flow);font-weight:600;font-family:var(--sans)}
 svg.ov{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
+svg.ov .dep{fill:none;stroke:var(--cmp);stroke-width:1.3;stroke-dasharray:3 3}svg.ov .deph{fill:var(--cmp)}
+.svw td.depsrc .st{background:var(--cmpsoft);border-radius:3px}.svw td.depsel .st{outline:1.5px solid var(--cmp);outline-offset:1px;border-radius:3px}
+.svw td.noslice{opacity:.35}.svw td.c.fl{cursor:pointer}
+.bar .slb{font:inherit;font-size:12px;padding:1px 8px;border:1px solid var(--rule);border-radius:4px;background:none;color:var(--fg);cursor:pointer;margin-left:10px}
+.bar .slb[aria-pressed="true"]{background:var(--cmpsoft);border-color:var(--cmp)}
 svg.ov .fl{fill:none;stroke:var(--flow);stroke-width:1.3;opacity:.85}svg.ov .fl.back{stroke-dasharray:4 3}svg.ov .flh{fill:var(--flow)}svg.ov .flt{fill:var(--flow);font:600 10px var(--mono)}
 .bar{font-size:12.5px;min-height:20px}
 .remote{border:1px dashed var(--rule);border-radius:8px;padding:8px 10px;font-size:12.5px;display:grid;gap:6px}
@@ -163,7 +171,7 @@ function codeKey(o, n) { var h = 0, s = o + "\u0000" + n; for (var i = 0; i < s.
 var $ = function (id) { return document.getElementById(id); };
 var esc = function (s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); };
 var LABEL = {changes: "changes the result", none: "no effect on the result", undone: "changes the result alone — restored by", together: "matters only together with", isolate: "cannot be tried alone"};
-var cmOld, cmNew, res = null, st = {hk: null, run: null}, runs = [], cov = {}, timer = null, curEx = null, marks = [];
+var cmOld, cmNew, res = null, st = {hk: null, run: null, dep: null, slice: false}, runs = [], cov = {}, timer = null, curEx = null, marks = [];
 
 function mk(id) {
   var ta = $(id);
@@ -181,7 +189,7 @@ function update() {
   var o = cmOld.getValue(), n = cmNew.getValue();
   if (!o.trim() && !n.trim()) { res = null; emptyState(); return; }
   res = Engine.analyze(o, n);
-  st.hk = null; st.run = null; lite.sel = null;
+  st.hk = null; st.run = null; st.dep = null; lite.sel = null;
   render(o, n);
   runLite(o, n);
   if (EVAL && curEx !== null) { try { localStorage.setItem("eval:" + EX[curEx].name, n); } catch (e) { } }
@@ -562,6 +570,13 @@ function bind() {
     var go = function (ev) { ev.stopPropagation(); select(+e.dataset.run); };
     e.addEventListener("click", go); e.addEventListener("keydown", function (ev) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); go(ev); } });
   });
+  document.querySelectorAll("#tbl td.c").forEach(function (td) {
+    td.addEventListener("click", function () {
+      if (st.run === null || !td.classList.contains("fl")) return;
+      var side = td.classList.contains("L") ? "L" : "R", line = +td.dataset[side.toLowerCase()];
+      st.dep = st.dep && st.dep.side === side && st.dep.line === line ? null : {side: side, line: line}; paint();
+    });
+  });
   document.querySelectorAll(".hk").forEach(function (e) {
     e.addEventListener("click", function () { st.hk = st.hk === +e.dataset.hk ? null : +e.dataset.hk; paint(); });
     e.addEventListener("keydown", function (ev) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); e.click(); } });
@@ -576,7 +591,7 @@ function clearMarks() { marks.forEach(function (m) { m[0].removeLineClass(m[1], 
 
 function paint() {
   if (!res || res.error) return;
-  document.querySelectorAll("#tbl td.c").forEach(function (td) { td.classList.remove("fl", "norun", "dv", "sel", "abs", "pick"); var v = td.querySelector(".val"); if (v) v.textContent = ""; });
+  document.querySelectorAll("#tbl td.c").forEach(function (td) { td.classList.remove("fl", "norun", "dv", "sel", "abs", "pick", "depsrc", "depsel", "noslice"); var v = td.querySelector(".val"); if (v) v.textContent = ""; });
   document.querySelectorAll(".lite .it").forEach(function (b) { b.setAttribute("aria-pressed", +b.dataset.it === lite.sel ? "true" : "false"); });
   var rp = document.querySelector(".lite pre.raw"); if (rp && showRaw()) rp.textContent = rawLog();
   if (lite.result && lite.sel !== null) {
@@ -612,25 +627,93 @@ function paint() {
   var dv = -1; for (var i = 0; i < Math.min(ro.trace.length, rn.trace.length); i++) if (rowOf("L", ro.trace[i]) !== rowOf("R", rn.trace[i])) { dv = i; break; }
   if (dv >= 0) { var x = cell("L", ro.trace[dv]), y = cell("R", rn.trace[dv]); if (x) x.classList.add("dv"); if (y) y.classList.add("dv"); }
   else if (ro.value !== rn.value) document.querySelectorAll("#tbl td.c.fl.chg").forEach(function (td) { td.classList.add("dv"); });
-  bar.innerHTML = "<b>" + esc(inputText(inp)) + "</b> &nbsp; " + outText(ro.value, rn.value, ro.value !== rn.value) + (ro.value !== rn.value ? " &nbsp; <span style='color:var(--neq)'>differ</span>" : " &nbsp; <span class='muted'>same</span>");
+  st.so = steps(res.mo, ro.trace); st.sn = steps(res.mn, rn.trace);
+  st.deps = [];
+  // the slice only dims what the result does not depend on; arrows come from clicking a line, as without it
+  if (st.slice) [["L", st.so], ["R", st.sn]].forEach(function (p) {
+    var sl = resultSlice(p[1]);
+    document.querySelectorAll("#tbl td.c." + p[0] + ".fl").forEach(function (td) { if (!sl.lines[+td.dataset[p[0].toLowerCase()]]) td.classList.add("noslice"); });
+  });
+  if (st.dep) {
+    var dc = cell(st.dep.side, st.dep.line);
+    if (dc && dc.classList.contains("fl")) {
+      dc.classList.add("depsel");
+      depSources(st.dep.side === "L" ? st.so : st.sn, st.dep.line).forEach(function (l) { var c = cell(st.dep.side, l); if (c) c.classList.add("depsrc"); st.deps.push([st.dep.side, l, st.dep.line]); });
+    } else st.dep = null;
+  }
+  bar.innerHTML = "<b>" + esc(inputText(inp)) + "</b> &nbsp; " + outText(ro.value, rn.value, ro.value !== rn.value) + (ro.value !== rn.value ? " &nbsp; <span style='color:var(--neq)'>differ</span>" : " &nbsp; <span class='muted'>same</span>") +
+    "<button type='button' class='slb' aria-pressed='" + st.slice + "' title='dim the lines the returned value does not depend on (through data or control)'>result slice</button>" +
+    " &nbsp; <span class='muted'>click a line to see where its values come from</span>";
+  bar.querySelector(".slb").addEventListener("click", function () { st.slice = !st.slice; paint(); });
   draw();
+}
+
+// ---------------------------------------------------------------- data / control dependences along the selected run
+// each executed step depends on the last steps that wrote the variables it reads (data) and on the last step of
+// the condition it runs under (control)
+var ldCache = {m: null, d: null};
+function steps(m, trace) {
+  if (ldCache.m !== m) ldCache = {m: m, d: Engine.lineDeps(m)};
+  var ld = ldCache.d, last = {}, lastLine = {}, out = [];
+  trace.forEach(function (l, i) {
+    var d = ld[l] || {r: {}, w: {}, parent: null}, data = [], ctl = [];
+    Object.keys(d.r).forEach(function (v) { if (v in last && data.indexOf(last[v]) < 0) data.push(last[v]); });
+    if (d.parent !== null && d.parent in lastLine) ctl.push(lastLine[d.parent]);
+    out.push({line: l, data: data, ctl: ctl});
+    Object.keys(d.w).forEach(function (v) { last[v] = i; });
+    lastLine[l] = i;
+  });
+  return out;
+}
+// lines whose values flow into line `l` on this run (every time it ran)
+function depSources(ss, l) {
+  var src = {};
+  ss.forEach(function (x) { if (x.line === l) x.data.forEach(function (j) { if (ss[j].line !== l) src[ss[j].line] = 1; }); });
+  return Object.keys(src).map(Number);
+}
+// the result slice: the lines whose steps the returned value depends on, through data and control
+function resultSlice(ss) {
+  var keep = {}, todo = ss.length ? [ss.length - 1] : [], lines = {};
+  while (todo.length) {
+    var i = todo.pop(); if (keep[i]) continue; keep[i] = 1; lines[ss[i].line] = 1;
+    ss[i].data.concat(ss[i].ctl).forEach(function (j) { todo.push(j); });
+  }
+  return {lines: lines};
 }
 
 var NS = "http://www.w3.org/2000/svg";
 function el(nm, at) { var e = document.createElementNS(NS, nm); for (var k in at) e.setAttribute(k, at[k]); return e; }
 function rect(td) { var s = td.querySelector(".st"); return (s && s.textContent.trim() ? s : td).getBoundingClientRect(); }
+// running straight on into the next line needs no arrow (the highlighted lines already show it); arrows are kept for
+// entering a branch, skipping lines, leaving a block and loop back-edges
+function indentOf(td) { return (td.textContent.match(/^\s*/) || [""])[0].length; }
+// the next row on that side, skipping alignment gaps (rows where only the other version has a line)
+function fallThrough(A, B) {
+  var tr = A.parentNode.nextElementSibling, side = A.classList.contains("L") ? "L" : "R";
+  while (tr && tr.querySelector("td.c." + side + ".gap")) tr = tr.nextElementSibling;
+  return tr === B.parentNode && indentOf(A) === indentOf(B);
+}
 function draw() {
   var svg = document.querySelector("svg.ov"), wrap = $("svw"); clearSvg();
   if (st.run === null || !st.to) return;
   var W = wrap.getBoundingClientRect(); if (!W.width) return;
   svg.setAttribute("width", wrap.scrollWidth); svg.setAttribute("height", wrap.scrollHeight);
   var m = el("marker", {id: "fa", viewBox: "0 0 8 8", refX: "7", refY: "4", markerWidth: "5", markerHeight: "5", orient: "auto-start-reverse"});
-  m.appendChild(el("path", {d: "M0,0 L8,4 L0,8 z", "class": "flh"})); var df = el("defs", {}); df.appendChild(m); svg.appendChild(df);
+  m.appendChild(el("path", {d: "M0,0 L8,4 L0,8 z", "class": "flh"})); var df = el("defs", {}); df.appendChild(m);
+  var md = el("marker", {id: "da", viewBox: "0 0 8 8", refX: "7", refY: "4", markerWidth: "5", markerHeight: "5", orient: "auto-start-reverse"});
+  md.appendChild(el("path", {d: "M0,0 L8,4 L0,8 z", "class": "deph"})); df.appendChild(md); svg.appendChild(df);
+  (st.deps || []).forEach(function (e) {
+    var A = cell(e[0], e[1]), B = cell(e[0], e[2]); if (!A || !B) return;
+    var ra = rect(A), rb = rect(B), sx = wrap.scrollLeft, sy = wrap.scrollTop;
+    var xa = ra.right - W.left + 6 + sx, xb = rb.right - W.left + 8 + sx, ya = ra.top + ra.height / 2 - W.top + sy, yb = rb.top + rb.height / 2 - W.top + sy;
+    var cx = Math.max(xa, xb) + 14 + Math.min(40, Math.abs(yb - ya) / 5);
+    svg.appendChild(el("path", {d: "M" + xa + "," + ya + " C" + cx + "," + ya + " " + cx + "," + yb + " " + xb + "," + yb, "class": "dep", "marker-end": "url(#da)"}));
+  });
   [["L", st.to], ["R", st.tn]].forEach(function (p) {
     var side = p[0], q = p[1], edges = {}, order = [];
     for (var i = 0; i + 1 < q.length; i++) { if (q[i] === q[i + 1]) continue; var k = q[i] + ">" + q[i + 1]; if (!edges[k]) { edges[k] = 0; order.push([q[i], q[i + 1]]); } edges[k]++; }
     order.forEach(function (e) {
-      var A = cell(side, e[0]), B = cell(side, e[1]); if (!A || !B) return;
+      var A = cell(side, e[0]), B = cell(side, e[1]); if (!A || !B || fallThrough(A, B)) return;
       var ra = rect(A), rb = rect(B), back = rb.top < ra.top, sx = wrap.scrollLeft, sy = wrap.scrollTop;
       var xa = ra.left - W.left - 7 + sx, xb = rb.left - W.left - 5 + sx, ya = ra.top + ra.height / 2 - W.top + sy + (back ? -4 : 4), yb = rb.top + rb.height / 2 - W.top + sy + (back ? 4 : -4);
       var near = !back && (+B.parentNode.dataset.row - +A.parentNode.dataset.row) === 1;

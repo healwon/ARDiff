@@ -1,12 +1,12 @@
 <title>ARDiff Refinement Explorer</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
 <style>
 /* Layout: control bar (benchmark + iteration scrubber) on top; below, code pane (left) and decision pane (right), stacking on phones */
 :root {
   --bg: #f5f6f8; --panel: #ffffff; --fg: #1a2130; --muted: #5e6879; --rule: #d8dde6; --hover: #eef1f6;
   --abs: #e6e9f0; --abs-fg: #6a7385; --conc: #2f6fb0; --conc-soft: #dce8f6; --chg: #c9790f; --chg-soft: #fbecd3;
   --pick: #7a3fb3; --pick-soft: #efe3fa; --ok: #23824f; --bad: #bf3a2b; --warn: #b07a12;
-  --sans: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --sans: "IBM Plex Sans", "Helvetica Neue", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
@@ -90,18 +90,18 @@ pre.raw { margin: 0; padding: 10px 12px; font-family: var(--mono); font-size: 12
 <div class="wrap">
   <div class="top">
     <h1>ARDiff Refinement Explorer</h1>
-    <label class="muted" for="bench">벤치마크</label>
+    <label class="muted" for="bench">benchmark</label>
     <select id="bench"></select>
     <span id="verdict" class="verdict"></span>
     <span class="grow"></span>
-    <span class="muted" style="font-size:12px"><span class="kbd">←</span> <span class="kbd">→</span> iteration 이동 · <span class="kbd">Space</span> 재생</span>
+    <span class="muted" style="font-size:12px"><span class="kbd">←</span> <span class="kbd">→</span> move between iterations · <span class="kbd">Space</span> play</span>
   </div>
 
   <div class="panel scrub">
     <div class="ctrl">
-      <button id="prev" type="button" aria-label="이전 iteration">◀ 이전</button>
-      <button id="play" type="button">▶ 재생</button>
-      <button id="next" type="button" aria-label="다음 iteration">다음 ▶</button>
+      <button id="prev" type="button" aria-label="previous iteration">◀ prev</button>
+      <button id="play" type="button">▶ play</button>
+      <button id="next" type="button" aria-label="next iteration">next ▶</button>
       <input id="slider" type="range" min="0" value="0" style="flex:1 1 160px" aria-label="iteration">
       <span class="now" id="now"></span>
     </div>
@@ -121,8 +121,8 @@ pre.raw { margin: 0; padding: 10px 12px; font-family: var(--mono); font-size: 12
 <script>
 const DATA = /*__DATA__*/[];
 const TABS = [
-  ["state", "원본 줄 상태"], ["iold", "IoldVARDiff.java"], ["inew", "InewVARDiff.java"],
-  ["z3", "Z3 수식"], ["jpf", "JPF 출력 (old)"]
+  ["state", "line status"], ["iold", "IoldVARDiff.java"], ["inew", "InewVARDiff.java"],
+  ["z3", "Z3 formulas"], ["jpf", "JPF output (old)"]
 ];
 let B = 0, I = 0, tab = "state", timer = null;
 const $ = id => document.getElementById(id);
@@ -154,8 +154,8 @@ function init(){
   $("bench").value = B;
   renderBench();
 }
-function play(){ if (I >= DATA[B].iters.length - 1) I = -1; $("play").textContent = "❚❚ 정지"; timer = setInterval(() => { if (I >= DATA[B].iters.length - 1) stop(); else go(I + 1); }, 1400); go(I + 1); }
-function stop(){ clearInterval(timer); timer = null; $("play").textContent = "▶ 재생"; }
+function play(){ if (I >= DATA[B].iters.length - 1) I = -1; $("play").textContent = "❚❚ pause"; timer = setInterval(() => { if (I >= DATA[B].iters.length - 1) stop(); else go(I + 1); }, 1400); go(I + 1); }
+function stop(){ clearInterval(timer); timer = null; $("play").textContent = "▶ play"; }
 function go(i){ const n = DATA[B].iters.length; I = Math.max(0, Math.min(n - 1, i)); render(); }
 
 function renderBench(){
@@ -178,15 +178,15 @@ function renderCodeState(b, it, prev){
   lines.forEach((t, k) => {
     const ln = k + 1; let cls = "", tag = "";
     const trivial = /^\s*(\}|else|\{)?\s*$/.test(t) || ln <= 3;
-    if (init.has(ln)){ cls = "chg"; tag = "변경"; }
-    else if (conc.has(ln)){ cls = "conc"; tag = fresh.has(ln) ? "복원" : ""; }
+    if (init.has(ln)){ cls = "chg"; tag = "changed"; }
+    else if (conc.has(ln)){ cls = "conc"; tag = fresh.has(ln) ? "restored" : ""; }
     else if (!trivial){ cls = "abs"; tag = "UF"; }
     if (fresh.has(ln) && !init.has(ln)) cls += " fresh";
-    if (it.pick === ln){ cls += " pick"; tag = "다음 복원"; }
+    if (it.pick === ln){ cls += " pick"; tag = "next"; }
     h += `<tr class="${cls}" id="L${ln}"><td class="n">${ln}</td><td class="tag">${tag}</td><td class="t">${esc(t) || " "}</td></tr>`;
   });
   $("codebox").innerHTML = h + "</table>";
-  $("legend").innerHTML = `<span><i style="background:var(--chg-soft)"></i>변경된 줄 (처음부터 구체)</span><span><i style="background:var(--abs)"></i>UF로 추상화</span><span><i style="background:var(--conc-soft)"></i>복원됨 (왼쪽 파란 선 = 이번에 복원)</span><span><i style="background:var(--pick-soft)"></i>H3가 고른 다음 복원 대상</span>`;
+  $("legend").innerHTML = `<span><i style="background:var(--chg-soft)"></i>changed line (concrete from the start)</span><span><i style="background:var(--abs)"></i>abstracted as a UF</span><span><i style="background:var(--conc-soft)"></i>restored (blue left edge = restored in this iteration)</span><span><i style="background:var(--pick-soft)"></i>chosen by H3 to restore next</span>`;
 }
 function renderJava(src, changed){
   const ch = new Set(changed);
@@ -195,47 +195,47 @@ function renderJava(src, changed){
     return `<tr class="${ch.has(k + 1) ? "dl" : ""}"><td class="n">${k + 1}</td><td class="tag">${ch.has(k + 1) ? "±" : ""}</td><td class="t">${body || " "}</td></tr>`;
   });
   $("codebox").innerHTML = `<table class="code">${rows.join("")}</table>`;
-  $("legend").innerHTML = `<span><i style="background:var(--conc-soft)"></i>이전 iteration 대비 바뀐 줄 (UF 번호 변경은 무시)</span><span><b class="uf" style="color:var(--pick)">UF_x</b> 추상화된 호출</span>`;
+  $("legend").innerHTML = `<span><i style="background:var(--conc-soft)"></i>changed since the previous iteration (UF renumbering ignored)</span><span><b class="uf" style="color:var(--pick)">UF_x</b> an abstracted call</span>`;
 }
 function renderRaw(s, note){
-  $("codebox").innerHTML = `<pre class="raw">${esc(s || "(없음)")}</pre>`;
+  $("codebox").innerHTML = `<pre class="raw">${esc(s || "(none)")}</pre>`;
   $("legend").innerHTML = `<span>${note}</span>`;
 }
 
 function renderDecision(b, it, i){
   const last = i === b.iters.length - 1;
   const st = it.status || "?";
-  let f = '<div><h3>이번 iteration의 판정</h3><div class="flow">';
-  f += `<div class="fstep"><b>1</b><span>Z3: old ≠ new 가 가능한가?</span><span class="pill p-${st}">${st}</span></div>`;
-  if (st === "UNSATISFIABLE") f += `<div class="fstep"><b>→</b><span>반례 없음 → <b style="color:var(--ok)">EQUIVALENT</b>로 종료</span></div>`;
+  let f = '<div><h3>What this iteration decided</h3><div class="flow">';
+  f += `<div class="fstep"><b>1</b><span>Z3: can old ≠ new?</span><span class="pill p-${st}">${st}</span></div>`;
+  if (st === "UNSATISFIABLE") f += `<div class="fstep"><b>→</b><span>no counterexample → stop: <b style="color:var(--ok)">EQUIVALENT</b></span></div>`;
   if (st === "SATISFIABLE"){
     const sc = it.satcheck || "?";
-    f += `<div class="fstep"><b>2</b><span>반례가 UF 때문일 수 있음 → old = new 가 가능하긴 한가?</span><span class="pill p-${sc}">${sc}</span></div>`;
-    if (sc === "UNSATISFIABLE") f += `<div class="fstep"><b>→</b><span>같을 수 없음 → <b style="color:var(--bad)">NOT EQUIVALENT</b>로 종료</span></div>`;
+    f += `<div class="fstep"><b>2</b><span>the counterexample may come from the UFs → can old = new at all?</span><span class="pill p-${sc}">${sc}</span></div>`;
+    if (sc === "UNSATISFIABLE") f += `<div class="fstep"><b>→</b><span>they can never be equal → stop: <b style="color:var(--bad)">NOT EQUIVALENT</b></span></div>`;
   }
-  if (!last) f += `<div class="fstep"><b>→</b><span>결론 못 냄 → 문장 하나를 복원하고 다음 iteration으로</span></div>`;
-  else if (st !== "UNSATISFIABLE" && !(st === "SATISFIABLE" && it.satcheck === "UNSATISFIABLE")) f += `<div class="fstep"><b>→</b><span>${esc(b.verdict)}로 종료</span></div>`;
+  if (!last) f += `<div class="fstep"><b>→</b><span>no conclusion → restore one statement and go to the next iteration</span></div>`;
+  else if (st !== "UNSATISFIABLE" && !(st === "SATISFIABLE" && it.satcheck === "UNSATISFIABLE")) f += `<div class="fstep"><b>→</b><span>stop: ${esc(b.verdict)}</span></div>`;
   f += "</div></div>";
 
   if (it.funcs && it.funcs.length){
     const cand = new Set(it.cand || []), h1 = new Set(it.h1 || []);
     const pickFns = new Set();
     if (it.pick){ const t = lineText(b, it.pick); (it.cand || it.funcs).forEach(fn => { const v = stripNum(fn).replace(/^UF_/, ""); if (new RegExp("\\b" + v + "\\b").test(t)) pickFns.add(fn); }); }
-    f += `<div><h3>남은 UF ${it.funcs.length}개 · H1·H2 후보 ${cand.size}개</h3><div class="uflist">` +
+    f += `<div><h3>${it.funcs.length} UFs left · ${cand.size} H1/H2 candidates</h3><div class="uflist">` +
       it.funcs.map((fn, k) => {
         const r = (it.h1res || [])[k];
         const c = ["ufc", cand.has(fn) ? "cand" : "", h1.has(fn) ? "h1" : "", pickFns.has(fn) ? "chosen" : ""].join(" ");
-        return `<span class="${c}" title="H1 검사: ${r || "-"}">${fn}${r ? ` <span class="p-${r}">${r === "unknown" ? "?" : r}</span>` : ""}</span>`;
+        return `<span class="${c}" title="H1 check: ${r || "-"}">${fn}${r ? ` <span class="p-${r}">${r === "unknown" ? "?" : r}</span>` : ""}</span>`;
       }).join("") + "</div>";
-    f += `<p class="note">회색 = 후보 아님 · 흰색 = H1/H2 후보 · 노란 테두리 = H1이 고른 함수 · 각 함수 옆은 H1의 Z3 검사 결과(sat이면 그 UF가 결과에 영향).</p></div>`;
+    f += `<p class="note">grey = not a candidate · white = H1/H2 candidate · yellow border = picked by H1 · next to each function: the result of the H1 check in Z3 (sat = that UF affects the result).</p></div>`;
   }
   if (it.R && it.R.length){
     const rows = [...it.R].sort((a, c) => a[1] - c[1] || a[0] - c[0]);
-    f += `<div><h3>H3 순위 (R이 낮을수록 먼저 복원)</h3><div class="rank">` + rows.map(([ln, r]) =>
+    f += `<div><h3>H3 ranking (lower R is restored first)</h3><div class="rank">` + rows.map(([ln, r]) =>
       `<div class="rrow ${ln === it.pick ? "chosen" : ""}" data-ln="${ln}"><span class="mono muted">${ln}</span><span class="src">${esc(lineText(b, ln))}</span><span class="r">R=${r}</span></div>`).join("") + "</div>";
-    f += `<p class="note">줄을 누르면 원본 코드의 해당 위치로 이동해요. 같은 R끼리는 로그에 나온 순서대로 첫 번째가 선택됨.</p></div>`;
+    f += `<p class="note">Click a line to jump to it in the code. Among equal R, the first one in the log is chosen.</p></div>`;
   }
-  if (it.pick) f += `<div><h3>선택</h3><div class="fstep" style="border-color:var(--pick)"><span class="mono" style="color:var(--pick)">${it.pick}:</span><code>${esc(lineText(b, it.pick))}</code></div><p class="note">다음 iteration에서 이 문장을 UF 대신 원래 코드로 되돌려 다시 심볼릭 실행해요.</p></div>`;
+  if (it.pick) f += `<div><h3>Chosen</h3><div class="fstep" style="border-color:var(--pick)"><span class="mono" style="color:var(--pick)">${it.pick}:</span><code>${esc(lineText(b, it.pick))}</code></div><p class="note">The next iteration puts this statement back in place of its UF and runs symbolic execution again.</p></div>`;
   $("dec").innerHTML = f;
   $("dec").querySelectorAll(".rrow").forEach(r => r.onclick = () => { tab = "state"; render(); const el = $("L" + r.dataset.ln); if (el) el.scrollIntoView({ block: "center", behavior: "smooth" }); });
 }
@@ -251,8 +251,8 @@ function render(){
   if (tab === "state") renderCodeState(b, it, prev);
   else if (tab === "iold") renderJava(it.iold, it.iold_changed);
   else if (tab === "inew") renderJava(it.inew, it.inew_changed);
-  else if (tab === "z3") renderRaw(it.z3, "z3summary.txt: old/new 요약 수식과 Z3에 넘긴 최종 쿼리");
-  else renderRaw(it.jpf, "IoldVARDiffJPFOutput.txt: JPF-Symbc 심볼릭 실행 로그");
+  else if (tab === "z3") renderRaw(it.z3, "z3summary.txt: the old/new summaries and the final query given to Z3");
+  else renderRaw(it.jpf, "IoldVARDiffJPFOutput.txt: JPF-Symbc symbolic execution log");
   $("codebox").scrollTop = top;
   renderDecision(b, it, I);
 }

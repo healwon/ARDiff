@@ -627,5 +627,38 @@ function analyze(oldSrc, newSrc, opts) {
   return res;
 }
 
-root.Engine = {numLit: numLit, MATHC: MATHC, parseMethod: parseMethod, run: run, analyze: analyze, diffRows: diffRows, inputSet: inputSet, Unsupported: Unsupported, lcsOps: lcsOps, stripComments: stripComments};
+// per source line of every method: the variables it reads and writes, and the line of the condition (if / loop)
+// it runs under; used to follow data and control dependences along a run
+function lineDeps(method) {
+  var out = {};
+  function vars(node, r, w) {
+    if (!Array.isArray(node)) return;
+    if (node[0] === "var") r[node[1]] = 1;
+    else if (node[0] === "assignx") { w[node[1]] = 1; vars(node[2], r, w); return; }
+    else if (node[0] === "preinc" || node[0] === "postinc") { r[node[1]] = 1; w[node[1]] = 1; return; }
+    else if (node[0] === "aget") r[node[1]] = 1;
+    node.forEach(function (x) { if (Array.isArray(x)) vars(x, r, w); });
+  }
+  function at(l, parent) { return out[l] = out[l] || {r: {}, w: {}, parent: parent}; }
+  function walk(s, parent) {
+    if (!s) return;
+    var d;
+    switch (s.k) {
+      case "block": s.body.forEach(function (x) { walk(x, parent); }); return;
+      case "decl": d = at(s.l0, parent); s.vars.forEach(function (v) { d.w[v[0]] = 1; if (v[1]) vars(v[1], d.r, d.w); }); return;
+      case "assign": d = at(s.l0, parent); d.w[s.name] = 1; vars(s.e, d.r, d.w); return;
+      case "astore": d = at(s.l0, parent); d.w[s.name] = 1; d.r[s.name] = 1; vars(s.idx, d.r, d.w); vars(s.e, d.r, d.w); return;
+      case "expr": case "return": d = at(s.l0, parent); if (s.e) vars(s.e, d.r, d.w); return;
+      case "if": d = at(s.l0, parent); vars(s.cond, d.r, d.w); walk(s.then, s.l0); walk(s.els, s.l0); return;
+      case "loop":
+        d = at(s.l0, parent); vars(s.cond, d.r, d.w);
+        [s.init, s.upd].forEach(function (x) { if (x) { (x.k === "block" ? x.body : [x]).forEach(function (y) { if (y.k === "assign" || y.k === "decl") { if (y.k === "assign") { d.w[y.name] = 1; vars(y.e, d.r, d.w); } else y.vars.forEach(function (v) { d.w[v[0]] = 1; if (v[1]) vars(v[1], d.r, d.w); }); } }); } });
+        walk(s.body, s.l0); return;
+    }
+  }
+  (method.all || [method]).forEach(function (m) { m.stmts.forEach(function (x) { walk(x, null); }); });
+  return out;
+}
+
+root.Engine = {lineDeps: lineDeps, numLit: numLit, MATHC: MATHC, parseMethod: parseMethod, run: run, analyze: analyze, diffRows: diffRows, inputSet: inputSet, Unsupported: Unsupported, lcsOps: lcsOps, stripComments: stripComments};
 })(typeof window !== "undefined" ? window : globalThis);

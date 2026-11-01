@@ -254,6 +254,14 @@ function curve(A,B,W,bendBase,cls,mk,label){
   svg.appendChild(el("path",{d:"M"+xa+","+ya+" C"+cx+","+ya+" "+cx+","+yb+" "+xb+","+yb,"class":cls+(back?" back":""),"marker-end":"url(#"+mk+")"}));
   if(label){ var t=el("text",{x:cx-3,y:(ya+yb)/2+3,"class":cls+"t","text-anchor":"end"}); t.textContent=label; svg.appendChild(t); }
 }
+// running straight on into the next line needs no arrow; arrows stay for branches, skips, block exits and loops
+function indentOf(td){ return (td.textContent.match(/^\s*/)||[""])[0].length; }
+// the next row on that side, skipping alignment gaps (rows where only the other version has a line)
+function fallThrough(A,B){
+  var tr=A.parentNode.nextElementSibling, side=A.classList.contains("L")?"L":"R";
+  while(tr && tr.querySelector("td."+side+".gap")) tr=tr.nextElementSibling;
+  return tr===B.parentNode && indentOf(A)===indentOf(B);
+}
 function seq(r, side){ var t=side==="L"?r.to:r.tn, s=side==="L"?r.so:r.sn; return st.all?t:s.map(function(k){return t[k];}); }
 function rowOf(side, l){ var c=cell(side,l+1); return c?+c.parentNode.dataset.row:-1; }
 function draw(){
@@ -266,7 +274,7 @@ function draw(){
     ["L","R"].forEach(function(side){
       var q=seq(r,side), edges={}, order=[];
       for(var i=0;i+1<q.length;i++){ var k=q[i]+">"+q[i+1]; if(!edges[k]){edges[k]=0; order.push([q[i],q[i+1]]);} edges[k]++; }
-      order.forEach(function(e){ var A=cell(side,e[0]+1), B=cell(side,e[1]+1); if(A&&B){ var c=edges[e[0]+">"+e[1]]; curve(A,B,W,(rect(B).top<rect(A).top)?30:20,"fl","mk"+root.id+"f", c>1&&rect(B).top<rect(A).top?"×"+c:""); } });
+      order.forEach(function(e){ var A=cell(side,e[0]+1), B=cell(side,e[1]+1); if(A&&B&&!fallThrough(A,B)){ var c=edges[e[0]+">"+e[1]]; curve(A,B,W,(rect(B).top<rect(A).top)?30:20,"fl","mk"+root.id+"f", c>1&&rect(B).top<rect(A).top?"×"+c:""); } });
     });
     return;
   }
@@ -375,6 +383,9 @@ code{font-family:var(--mono);font-size:12.5px}.muted{color:var(--muted)}.hl{colo
 .tag{font-family:var(--mono);font-size:11px;border:1px solid var(--rule);border-radius:4px;padding:0 5px;color:var(--muted)}.tag.cmp{border-color:var(--cmp);color:var(--cmp)}.tag.warn{border-color:var(--unk);color:var(--unk)}.tag.ctx{border-color:var(--ctx);color:var(--ctx)}
 .hk.id{box-shadow:inset 4px 0 0 var(--id)}.hk.ctx{box-shadow:inset 4px 0 0 var(--ctx)}.hk.brk{box-shadow:inset 4px 0 0 var(--brk)}.hk.nof,.hk.unk{box-shadow:inset 4px 0 0 var(--nof)}
 .hk[aria-pressed="true"]{border-color:var(--fg)}.hk:focus-visible,.ev:focus-visible{outline:2px solid var(--ctx);outline-offset:2px}
+/* change cards: old and new in the diff's deletion / addition colours */
+.hkd>div{padding:2px 6px;border-radius:4px}.hkd>div:first-child{background:var(--del)}.hkd>div:nth-child(2){background:var(--add)}
+.hkd>div:first-child .side{color:var(--neq);font-weight:600}.hkd>div:nth-child(2) .side{color:var(--eq);font-weight:600}
 .hkd{display:grid;gap:2px;font-size:12.5px}.hkd .side{display:inline-block;width:32px;font-size:11px;color:var(--muted)}
 .evs,.exs{display:flex;flex-direction:column;gap:4px}.exs{grid-column:1/-1;flex-direction:row;flex-wrap:wrap;align-items:center}
 .exs .showmiss{font:inherit;font-size:11.5px;color:var(--unk);background:var(--panel);border:1px dashed var(--unk);border-radius:6px;padding:1px 8px;cursor:pointer}
