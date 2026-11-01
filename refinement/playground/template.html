@@ -20,7 +20,7 @@
 *{box-sizing:border-box}[hidden]{display:none!important}
 html,body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5}
 .top{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--rule);background:var(--panel)}
-.top h1{font-size:17px;margin:0}.top .tnav{font:inherit;font-size:12px;padding:3px 9px;border:1px solid var(--rule);border-radius:4px;background:var(--panel);color:var(--fg);cursor:pointer}.top .tnav:disabled{opacity:.4;cursor:default}.top .home{color:var(--flow);font-size:13px;text-decoration:none}.top .home:hover{text-decoration:underline}.top .sp{flex:1}
+.top h1{font-size:17px;margin:0}.top .tnav{font:inherit;font-size:12px;padding:3px 9px;border:1px solid var(--rule);border-radius:4px;background:var(--panel);color:var(--fg);cursor:pointer}.top .tnav:disabled{opacity:.4;cursor:default}.top .restart.armed{color:var(--neq);border-color:var(--neq)}.top .restart{font:inherit;font-size:12px;padding:3px 9px;border:1px solid var(--rule);border-radius:4px;background:none;color:var(--muted);cursor:pointer}.top .home{color:var(--flow);font-size:13px;text-decoration:none}.top .home:hover{text-decoration:underline}.top .sp{flex:1}
 select,button{font:inherit;font-size:13px;color:var(--fg);background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:3px 9px;cursor:pointer}
 select:focus-visible,button:focus-visible,.ev:focus-visible,.hk:focus-visible{outline:2px solid var(--ctx);outline-offset:2px}
 .main{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:0;min-height:calc(100vh - 54px)}
@@ -103,6 +103,10 @@ body.rawmode .rawtests{display:block}#rawdiff{max-height:45vh}
 #rawdiff .dk{color:var(--ctx)}#rawdiff .dh{color:var(--muted);font-weight:600}body.rawmode .lite pre.raw{max-height:70vh}
 body.rawmode .CodeMirror [class*="ln-"]{background:none}
 /* evaluation tasks (eval.html) */
+.start{max-width:720px;margin:40px auto;padding:24px 28px;border:1px solid var(--rule);border-radius:10px;background:var(--panel);font-size:14.5px;line-height:1.6}
+.start h2{margin:0 0 10px;font-size:20px}.start p,.start ul{margin:8px 0}.start li{margin:2px 0}
+.start #startbtn{margin-top:14px;font:inherit;font-weight:600;padding:7px 22px;border-radius:6px;border:1px solid var(--flow);background:var(--flowsoft);color:var(--fg);cursor:pointer}
+body.evalpage .top .mode,body.starting .main,body.starting .top .tnav,body.starting .top select,body.starting .top label{display:none}
 .task{border:1px solid var(--rule);border-radius:8px;background:var(--panel);padding:10px 12px;display:grid;gap:5px;font-size:13px}
 .task .th{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.task .th b{font-size:14px}
 .task .th button{margin-left:auto;font:inherit;font-size:12px;padding:2px 9px;border:1px solid var(--rule);border-radius:4px;background:none;color:var(--fg);cursor:pointer}
@@ -110,9 +114,6 @@ body.rawmode .CodeMirror [class*="ln-"]{background:none}
 .task .ti{display:flex;gap:8px;align-items:baseline}.task .ti .ic{width:14px;flex:none;font-weight:700;text-align:center}
 .task .ti.ok .ic{color:var(--eq)}.task .ti.bad .ic{color:var(--neq)}.task .ti.wait .ic,.task .ti.na .ic{color:var(--muted)}
 .task .tsize{margin-top:4px;font-size:12px}
-/* ?viz=0: the task page without the visualization (e.g. a control group) */
-body.noviz #chips,body.noviz #cards,body.noviz #ins,body.noviz #svw,body.noviz #bar,body.noviz #lg,body.noviz #lite,body.noviz .top .mode,body.noviz #rawdiff,body.noviz #rawtests{display:none!important}
-body.noviz .CodeMirror [class*="ln-"]{background:none}
 .lg .k{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:5px;vertical-align:-2px}
 </style>
 
@@ -124,6 +125,23 @@ body.noviz .CodeMirror [class*="ln-"]{background:none}
   <span class="sp"></span>
   <span class="note">edit either version — the analysis on the right updates as you type</span>
   <span class="mode" role="group" aria-label="view"><button type="button" data-mode="visual" aria-pressed="true">visual</button><button type="button" data-mode="raw" aria-pressed="false">raw output</button></span>
+</div>
+<div class="start" id="start" hidden>
+  <h2>Regression repair tasks</h2>
+  <p>You will fix <b class="ntasks">4</b> small Java methods, one task at a time. In every task the <b>new version</b> changes the
+    <b>old version</b> on purpose, but the change also brought in one or more mistakes (regressions).</p>
+  <p>Edit the new version so that</p>
+  <ul>
+    <li>the <b>intended change</b> described in the task is still there,</li>
+    <li>everything else behaves <b>exactly as the old version</b>, and</li>
+    <li>the listed <b>constraints</b> are respected (they say which lines you may not change).</li>
+  </ul>
+  <p>The old version cannot be edited. The checklist above the code tells you, as you type, whether the behaviour is right and the
+    constraints hold; a task is done when it says <span class="chip eq">solved</span>. Some tasks show a visualization of how the
+    two versions differ; the others show the raw output instead (a line diff, the solver log of the equivalence checker, and the
+    results of running both versions on test inputs).</p>
+  <p>Use <b>prev</b> / <b>next</b> to move between tasks. Your edits are kept in this browser, so you can come back to a task.</p>
+  <button type="button" id="startbtn">Start</button>
 </div>
 <div class="main">
   <div class="left">
@@ -750,12 +768,12 @@ function draw() {
   });
 }
 
-// task page: which tasks show the visualization. Each browser draws once, at random, half of the tasks with it and
-// half without, and keeps that; ?viz=1 / ?viz=0 force one way for every task, ?reassign draws again
+// task page: which tasks show the visualization (the others show the raw output). Each browser draws once, at random,
+// half of the tasks with it and half without, and keeps that; ?viz=1 / ?viz=0 force one way for every task
 function vizPlan() {
   var key = "eval:vizplan", plan = null, names = EX.map(function (e) { return e.name; });
   try { plan = JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { }
-  if (/[?&]reassign\b/.test(location.search) || !plan || names.some(function (n) { return !(n in plan); })) {
+  if (/[?&](restart|reassign)\b/.test(location.search) || !plan || names.some(function (n) { return !(n in plan); })) {
     var order = names.slice();
     for (var i = order.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = order[i]; order[i] = order[j]; order[j] = t; }
     plan = {}; order.forEach(function (n, k) { plan[n] = k < Math.ceil(order.length / 2) ? 1 : 0; });
@@ -772,7 +790,8 @@ function load(i) {
   var ex = EX[i], saved = null;
   if (EVAL) {
     try { saved = localStorage.getItem("eval:" + ex.name); } catch (e) { }
-    document.body.classList.toggle("noviz", !vizFor(ex.name));
+    // the assigned condition: the visualization, or the raw output (line diff, ARDiff-lite's z3 log, test runs)
+    rawMode = !vizFor(ex.name); document.body.classList.toggle("rawmode", rawMode);
     $("ex").value = i;
     var pv = $("prevtask"), nx = $("nexttask"); if (pv) pv.disabled = i === 0; if (nx) nx.disabled = i === EX.length - 1;
     try { history.replaceState(null, "", location.pathname + location.search + "#" + ex.name); } catch (e) { }
@@ -787,7 +806,8 @@ window.addEventListener("load", function () {
   cmOld = mk("old"); cmNew = mk("new");
   var sel = $("ex");
   if (EVAL) {
-    // the task page: old is fixed, the new version is the participant's
+    // the task page: old is fixed, the new version is the participant's; the view is set per task, not by the switch
+    document.body.classList.add("evalpage");
     document.title = "Regression Repair Tasks";
     document.querySelector(".top h1").textContent = "Regression Repair Tasks";
     document.querySelector(".top label").textContent = "task";
@@ -799,10 +819,36 @@ window.addEventListener("load", function () {
     sel.addEventListener("change", function () { load(+sel.value); });
     // previous / next task
     sel.insertAdjacentHTML("afterend", "<button type='button' class='tnav' id='prevtask'>◀ prev</button><button type='button' class='tnav' id='nexttask'>next ▶</button>");
+    document.querySelector(".top .note").insertAdjacentHTML("afterend", "<button type='button' class='restart' id='restart' title='start over for a new participant'>restart</button>");
     $("prevtask").addEventListener("click", function () { if (curEx > 0) load(curEx - 1); });
     $("nexttask").addEventListener("click", function () { if (curEx < EX.length - 1) load(curEx + 1); });
     var ti = 0; EX.forEach(function (e, i) { if ("#" + e.name === location.hash) ti = i; });
-    sel.value = ti; load(ti);
+    // start page on the first visit (and after restart); then straight to the tasks
+    var started = false; try { started = localStorage.getItem("eval:started") === "1"; } catch (e) { }
+    document.querySelector("#start .ntasks").textContent = EX.length;
+    var begin = function (i) {
+      document.body.classList.remove("starting"); $("start").hidden = true;
+      try { localStorage.setItem("eval:started", "1"); } catch (e) { }
+      sel.value = i; load(i);
+    };
+    $("startbtn").addEventListener("click", function () { begin(0); });
+    if (started) begin(ti); else { document.body.classList.add("starting"); $("start").hidden = false; }
+    // a new participant: new visualization assignment, no saved edits, back to the start page. Confirmed by a second
+    // click (a confirm() dialog is blocked inside embedded pages, where it silently counts as "cancel")
+    var armed = null;
+    $("restart").addEventListener("click", function () {
+      var btn = $("restart");
+      if (!armed) {
+        btn.textContent = "click again to restart"; btn.classList.add("armed");
+        armed = setTimeout(function () { armed = null; btn.textContent = "restart"; btn.classList.remove("armed"); }, 4000);
+        return;
+      }
+      clearTimeout(armed); armed = null; btn.textContent = "restart"; btn.classList.remove("armed");
+      try { Object.keys(localStorage).forEach(function (k) { if (k.indexOf("eval:") === 0) localStorage.removeItem(k); }); } catch (e) { }
+      vizPlan();
+      try { history.replaceState(null, "", location.pathname); } catch (e) { }
+      document.body.classList.add("starting"); $("start").hidden = false; window.scrollTo(0, 0);
+    });
   } else {
     // one group per example folder
     var groups = []; EX.forEach(function (e, i) { var g = groups[groups.length - 1]; if (!g || g.name !== e.group) groups.push(g = {name: e.group, items: []}); g.items.push(i); });
