@@ -90,7 +90,9 @@ svg.ov .fl{fill:none;stroke:var(--flow);stroke-width:1.3;opacity:.85}svg.ov .fl.
 /* raw mode: only what the analyses printed, no visualization */
 body.rawmode #chips,body.rawmode #cards,body.rawmode #ins,body.rawmode #svw,body.rawmode #bar,body.rawmode #lg,body.rawmode .lite .rawb{display:none}
 .rawtests,.lite pre.raw{font-variant-ligatures:none}
-body.rawmode .rawtests{display:block}#rawdiff{max-height:45vh}body.rawmode .lite pre.raw{max-height:70vh}
+body.rawmode .rawtests{display:block}#rawdiff{max-height:45vh}
+#rawdiff span{display:inline-block;min-width:100%}#rawdiff .dd{background:var(--del)}#rawdiff .da{background:var(--add)}
+#rawdiff .dk{color:var(--ctx)}#rawdiff .dh{color:var(--muted);font-weight:600}body.rawmode .lite pre.raw{max-height:70vh}
 body.rawmode .CodeMirror [class*="ln-"]{background:none}
 /* evaluation tasks (eval.html) */
 .task{border:1px solid var(--rule);border-radius:8px;background:var(--panel);padding:10px 12px;display:grid;gap:5px;font-size:13px}
@@ -309,7 +311,12 @@ function unifiedDiff(o, n, ctx) {
 }
 // every tested input with both results, as plain text (raw mode)
 function renderRawTests() {
-  var dl = $("rawdiff"); if (dl) dl.textContent = rawMode && res ? unifiedDiff(cmOld.getValue(), cmNew.getValue(), 3) : "";
+  // the diff stays plain text, each line coloured by its first character (-, +, @@)
+  var dl = $("rawdiff");
+  if (dl) dl.innerHTML = !(rawMode && res) ? "" : unifiedDiff(cmOld.getValue(), cmNew.getValue(), 3).split("\n").map(function (l) {
+    var c = /^(---|\+\+\+)/.test(l) ? "dh" : l[0] === "-" ? "dd" : l[0] === "+" ? "da" : /^@@/.test(l) ? "dk" : "";
+    return "<span" + (c ? " class='" + c + "'" : "") + ">" + (esc(l) || " ") + "</span>";
+  }).join("\n");
   var el = $("rawtests"); if (!el) return;
   if (!rawMode || !res || res.error) { el.textContent = res && res.error ? res.error : ""; return; }
   var rows = res.inputs.map(function (inp, i) { return {i: i, d: res.base[i] !== res.full[i]}; });
