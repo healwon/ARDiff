@@ -1,14 +1,15 @@
 public class newV {
-    // holidays (holiday == 1) pay every hour double; regular and overtime hours split with min / max
+    // after: on a holiday (holiday == 1) every hour is paid at twice the rate (no overtime premium)
+    // constraints:
+    //   1. do not change the if statement for holiday
     public static double snippet(int hours, int rate, int holiday) {
         int pay = 0;
         int regular = 0;
         int over = 0;
-        regular = Math.min(hours, 40);
         over = Math.max(hours - 40, 0);
-        pay = regular * rate + over * (rate * 3 / 2);
+        pay = hours * rate + over * rate / 2;
         if (holiday == 1) {
-            pay = hours * rate * 2;
+            pay = pay * 2;
         }
         return pay;
     }

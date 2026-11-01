@@ -1,5 +1,5 @@
 # Runs ARDiff on what a push changed (EQUIVALENT / NOT EQUIVALENT + semantic difference):
-#   all mode (default, also on push): oldV/newV folders under PAIRS_ROOT (examples/same-old) -> oldV vs newV
+#   all mode (default, also on push): oldV/newV folders under PAIRS_ROOT (examples/simple) -> oldV vs newV
 #     (every folder by default; limit N = N folders spread over the list)
 #   pairs mode: only folders touched by the commit(s)
 #   methods mode: each changed method, old commit vs new commit
@@ -30,7 +30,7 @@ on:
       pairs_root:
         description: "all mode: folder to scan for oldV/newV pairs (e.g. benchmarks)"
         required: false
-        default: "examples/same-old"
+        default: "examples/simple"
       limit:
         description: "all mode: how many folders to check, evenly spread (0 = all)"
         required: false
@@ -70,7 +70,7 @@ jobs:
       ONLY: ${{ inputs.only }}
       MODE: ${{ inputs.mode || 'all' }}          # push: all mode too
       LIMIT: ${{ inputs.limit || '0' }}           # push: every pair under PAIRS_ROOT
-      PAIRS_ROOT: ${{ inputs.pairs_root || 'examples/same-old' }}
+      PAIRS_ROOT: ${{ inputs.pairs_root || 'examples/simple' }}
       EVENT: ${{ github.event_name }}
       PUSH_BEFORE: ${{ github.event.before }}
       PUSH_AFTER: ${{ github.sha }}

@@ -8,21 +8,21 @@
 
 목표 동작은 `specV`(old에 의도된 변경만 넣은 버전)입니다. 고친 코드는 spec과 같아야 하므로, 전체를 old로 되돌리면 의도된 변경을 잃어서 오답이고, 바뀐 줄만 되돌려도 다른 변경과 얽혀 있어서 대부분 오답입니다.
 
-| task | 의도된 변경 (남김) | 리팩터링 (남김) | regression | 참고 수정 (`fixedV`) |
+| task | 의도된 변경 (남김) | 제약 | regression | 참고 수정 (`fixedV`) |
 |---|---|---|---|---|
-| `Shipping` | 무료배송 기준 100 → 80, express(`express == 1`)는 무료여도 +7 | 요금을 `base`, `extra`, `rush`로 나눠 조립, `weight / 2 - 5` | `total > 80` (80은 무료가 아님), 무료 처리가 express 요금까지 0으로 만듦 | `>=`로, `rush`는 무료 판정 뒤에 더함 |
-| `OvertimeRate` | 휴일(`holiday == 1`)은 모든 시간을 시급의 2배로 | `Math.min` / `Math.max`로 일반·초과 시간 분리 | `over * (rate * 3 / 2)`: 1.5배를 시간마다 내림해서 홀수 시급에서 다름 | `over * rate * 3 / 2` |
-| `MemberDiscount` | 회원 5% 할인은 주문 합계(`price * qty`) 100 이상일 때만 | 할인율을 `pct`에 모음 | `total * pct / 100`: 두 할인을 따로 내림하던 것과 반올림이 달라짐 (리팩터링의 일부를 고쳐야 함) | `pct`는 두고 두 부분을 따로 내림 |
-| `DigitSum` | 음수는 절댓값의 자릿수 합 (`Math.abs(n)`) | 마지막 자리는 루프 뒤에서 더함 | `while (m > 10)`: 10, 100~109, 1000~1099 … 에서 틀림 | `m >= 10` |
+| `Shipping` | 무료배송 기준 100 → 80, express(`express == 1`)는 무료여도 +7 | `fee = base + extra + rush;`, weight·express `if` 그대로 | `total > 80` (80은 무료가 아님), 무료 처리가 express 요금까지 0으로 만듦 | `total >= 80`, 무료일 때 `fee = rush;` (3토큰) |
+| `OvertimeRate` | 휴일(`holiday == 1`)은 모든 시간을 시급의 2배로, 초과근무 할증 없음 | 휴일 `if` 그대로 | 할증 `over * rate / 2`를 한 번에 내림(old는 시간마다), 휴일에도 할증이 붙어 2배가 됨 | `hours * rate + (holiday == 1 ? 0 : over * (rate * 3 / 2 - rate))` (15토큰) |
+| `MemberDiscount` | 회원 5% 할인은 주문 합계(`price * qty`) 100 이상일 때만 | 두 `if` 문 그대로 | `total * pct / 100`: 할인을 합계에서 한 번에 내림 (old는 단가에서 할인마다 내림) | 마지막 줄만: 단가에서 할인마다 내림 (26토큰) |
+| `DigitSum` | 음수는 절댓값의 자릿수 합 | 루프 본문, `m = n;` 그대로, `while`은 10과 비교 | `while (abs(m) > 10)`: 10, 100~109 … 에서 틀림, 음수면 마지막 자리를 부호째 더함 | `abs(m) >= 10`, 루프 뒤 `abs(m)` (4토큰) |
 
 검증 (spec과 비교, 넓은 범위 전수 실행 / ARDiff-lite):
 
 | task | old | new (주어진 것) | fixed |
 |---|---|---|---|
-| `Shipping` | 다름 · NOT EQUIVALENT (의도된 변경) | 5913/41553 다름 · NOT EQUIVALENT | 같음 · EQUIVALENT |
-| `OvertimeRate` | 다름 · NOT EQUIVALENT | 1560/11193 다름 · NOT EQUIVALENT | 같음 · EQUIVALENT |
-| `MemberDiscount` | 다름 · NOT EQUIVALENT | 603/12558 다름 · NOT EQUIVALENT | 같음 · EQUIVALENT |
-| `DigitSum` | 다름 · NOT EQUIVALENT | 222/4001 다름 · NOT EQUIVALENT | 같음 · EQUIVALENT |
+| `Shipping` | 17051/41553 다름 · NOT EQUIVALENT (의도된 변경) | 5913/41553 다름 · NOT EQUIVALENT | 0 다름 · EQUIVALENT |
+| `OvertimeRate` | 3600/11193 다름 · NOT EQUIVALENT | 3158/11193 다름 · NOT EQUIVALENT | 0 다름 · EQUIVALENT |
+| `MemberDiscount` | 773/12558 다름 · NOT EQUIVALENT | 7887/12558 다름 · NOT EQUIVALENT | 0 다름 · EQUIVALENT |
+| `DigitSum` | 2000/4001 다름 · NOT EQUIVALENT | 2111/4001 다름 · NOT EQUIVALENT | 0 다름 · ARDiff-lite 판정 불가(테스트로 판단) |
 
 ## 과제 페이지 (`eval.html`)
 

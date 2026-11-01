@@ -1,5 +1,9 @@
 public class newV {
-    // free shipping from 80 now, express (express == 1) costs 7 more; the fee is assembled from named parts
+    // after: free shipping from 80 now, and express (express == 1) costs 7 more;
+    //        the fee is assembled from named parts
+    // constraints:
+    //   1. do not change the line `fee = base + extra + rush;`
+    //   2. do not change the if statements for weight and express
     public static double snippet(int weight, int total, int express) {
         int base = 5;
         int extra = 0;

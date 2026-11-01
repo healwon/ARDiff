@@ -2,10 +2,12 @@ public class specV {
     // spec: the old rule, free from 80, and express adds 7 on top (also when shipping is free)
     public static double snippet(int weight, int total, int express) {
         int fee = 0;
+        int extra = 0;
         fee = 5;
         if (weight > 10) {
-            fee = fee + (weight - 10) / 2;
+            extra = (weight - 10) / 2;
         }
+        fee = fee + extra;
         if (total >= 80) {
             fee = 0;
         }

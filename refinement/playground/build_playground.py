@@ -3,7 +3,7 @@
 
 usage: build_playground.py OUT.html [--examples [LABEL=]DIR ...] [--report report.json ...]
   --examples  folder with <name>/<Eq|NEq>/{oldV,newV}.java, repeatable; each is a group in the example menu
-              (default: <repo>/examples/same-old). Examples of the second and later folders are named LABEL/<name>/<kind>
+              (default: <repo>/examples/simple). Examples of the second and later folders are named LABEL/<name>/<kind>
   --pick      names (e.g. EvenSum,Overtime) to keep from the first --examples folder; the rest are left out
   --benchmarks folder of benchmarks (e.g. <repo>/benchmarks): each subfolder becomes a group, pairs found at any depth
   --eval      folder of evaluation tasks (<task>/{oldV,newV,specV,fixedV}.java + task.json): builds the task page instead.
@@ -50,7 +50,7 @@ def main():
             pass
 
     specs = [s.split("=", 1) if "=" in s else (os.path.basename(os.path.normpath(s)), s)
-             for s in (a.examples or [os.path.join(REPO, "examples", "same-old")])]
+             for s in (a.examples or [os.path.join(REPO, "examples", "simple")])]
     if a.benchmarks:
         specs += [(b, os.path.join(a.benchmarks, b)) for b in sorted(os.listdir(a.benchmarks), key=str.lower)
                   if os.path.isdir(os.path.join(a.benchmarks, b))]

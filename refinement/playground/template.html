@@ -270,9 +270,11 @@ function renderTask() {
       "nothing else changed: same as old on all " + sc.other + " other tested inputs" :
       "unintended difference on " + (sc.other - sc.otherOk) + " of " + sc.other + " inputs, e.g. " + inputText(sc.regEx.inp) + ": should stay " + sc.regEx.want + ", is " + sc.regEx.got});
   }
+  // ARDiff-lite only fails the task when it finds a real difference; when it cannot decide, the tests decide
   var lv = lite.error ? null : lite.spec ? lite.spec.verdict : undefined;
-  items.push({ok: lv === null ? "na" : lv === undefined ? "wait" : lv === "EQUIVALENT",
+  items.push({ok: lv === null || lv === "UNKNOWN" ? "na" : lv === undefined ? "wait" : lv === "EQUIVALENT",
     txt: lv === null ? "ARDiff-lite unavailable here (it runs on the GitHub Pages version)" : lv === undefined ? "ARDiff-lite against the spec: checking…" :
+         lv === "UNKNOWN" ? "ARDiff-lite could not decide against the spec (" + (lite.spec.reason || "unknown") + "); the tests decide" :
          lv === "EQUIVALENT" ? "ARDiff-lite: equivalent to the spec" : "ARDiff-lite against the spec: " + lv +
          (lite.spec.counterexample ? " — e.g. " + inputText(lite.spec.counterexample.inputs) + ": should be " + lite.spec.counterexample.old + ", is " + lite.spec.counterexample.new : "")});
   var keep = t.keep.map(function (k) {
@@ -285,7 +287,9 @@ function renderTask() {
   };
   var solved = items.concat(keep).every(function (x) { return x.ok === true || x.ok === "na"; });
   box.innerHTML = "<div class='th'><b>" + esc(t.title) + "</b>" + (solved ? "<span class='chip eq'>solved</span>" : "") +
-    "<button type='button' id='reset'>reset to the given new version</button></div><p>" + esc(t.goal) + "</p>" +
+    "<button type='button' id='reset'>reset to the given new version</button></div>" +
+    // the goal: before (with examples) / change / constraints, one per line
+    t.goal.split("\n").map(function (l) { var m = /^(\w+):\s*(.*)$/.exec(l); return "<p>" + (m ? "<b>" + esc(m[1]) + ":</b> " + esc(m[2]) : esc(l)) + "</p>"; }).join("") +
     "<div class='tg'>behaviour</div>" + items.map(li).join("") +
     (keep.length ? "<div class='tg'>keep</div>" + keep.map(li).join("") : "") +
     "<div class='tsize muted'>edit size: " + editTokens(ex.new, src) + " tokens changed from the given new version (reference fix: " + t.refTokens + ")</div>";

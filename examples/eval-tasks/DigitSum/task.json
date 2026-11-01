@@ -1,16 +1,21 @@
 {
  "title": "Digit sum",
- "goal": "Intended change: a negative n now counts by its digits (as Math.abs(n) does). Keep adding the last digit after the loop. Everything else must behave as before.",
+ "goal": "Before: returns the sum of the decimal digits of n, and 0 for a negative n (123 → 6, 10 → 1, -123 → 0).\nChange: a negative n is now summed by its digits as well, as if it were positive (-123 → 6); nothing else changes.\nConstraints: do not change the loop body or the line m = n;, and the while condition must still compare against 10.",
  "keep": [
   {
-   "desc": "negative numbers use their absolute value: Math.abs(n)",
+   "desc": "constraint 1: the loop body is unchanged (sum = sum + abs(m) % 10; m = m / 10;)",
    "type": "contains",
-   "re": "Math\\.abs\\s*\\(\\s*n\\s*\\)"
+   "re": "while\\s*\\(.*\\)\\s*\\{\\s*sum\\s*=\\s*sum\\s*\\+\\s*abs\\s*\\(\\s*m\\s*\\)\\s*%\\s*10\\s*;\\s*m\\s*=\\s*m\\s*/\\s*10\\s*;\\s*\\}"
   },
   {
-   "desc": "the last digit is still added after the loop: sum = sum + m",
+   "desc": "constraint 2: the while condition still compares against 10",
    "type": "contains",
-   "re": "\\}\\s*sum\\s*=\\s*sum\\s*\\+\\s*m\\s*;"
+   "re": "while\\s*\\(\\s*(abs\\s*\\(\\s*m\\s*\\)|m)\\s*(>=|>|<=|<|==|!=)\\s*10\\s*\\)"
+  },
+  {
+   "desc": "constraint 3: the line m = n; is unchanged",
+   "type": "contains",
+   "re": "\\bm\\s*=\\s*n\\s*;"
   }
  ]
 }
