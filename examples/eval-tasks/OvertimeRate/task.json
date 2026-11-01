@@ -5,7 +5,10 @@
   {
    "desc": "constraint 1: the if statement for holiday is unchanged: if (holiday == 1) { pay = pay * 2; }",
    "type": "contains",
-   "re": "if\\s*\\(\\s*holiday\\s*==\\s*1\\s*\\)\\s*\\{\\s*pay\\s*=\\s*pay\\s*\\*\\s*2\\s*;\\s*\\}"
+   "re": "if\\s*\\(\\s*holiday\\s*==\\s*1\\s*\\)\\s*\\{\\s*pay\\s*=\\s*pay\\s*\\*\\s*2\\s*;\\s*\\}",
+   "desc_ko": "제약 1: 휴일 if 문이 그대로: if (holiday == 1) { pay = pay * 2; }"
   }
- ]
+ ],
+ "title_ko": "초과근무와 휴일",
+ "goal_ko": "원래: 40시간까지는 hours * rate를, 그 이상의 시간은 시급의 1.5배(시간마다 내림)를 지급합니다 (38시간, 시급 10 → 380; 42시간, 시급 11 → 472).\n변경: 휴일(holiday == 1)에는 초과근무 할증 없이 모든 시간을 시급의 2배로 지급합니다 (휴일 42시간, 시급 11 → 924). 그 밖의 동작은 바뀌지 않습니다.\n제약: 휴일 if 문은 고치지 마세요."
 }

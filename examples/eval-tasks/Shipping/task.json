@@ -5,17 +5,22 @@
   {
    "desc": "constraint 1: the line fee = base + extra + rush; is unchanged",
    "type": "contains",
-   "re": "fee\\s*=\\s*base\\s*\\+\\s*extra\\s*\\+\\s*rush\\s*;"
+   "re": "fee\\s*=\\s*base\\s*\\+\\s*extra\\s*\\+\\s*rush\\s*;",
+   "desc_ko": "제약 1: fee = base + extra + rush; 줄이 그대로"
   },
   {
    "desc": "constraint 2: the weight if is unchanged: if (weight > 10) { extra = weight / 2 - 5; }",
    "type": "contains",
-   "re": "if\\s*\\(\\s*weight\\s*>\\s*10\\s*\\)\\s*\\{\\s*extra\\s*=\\s*weight\\s*/\\s*2\\s*-\\s*5\\s*;\\s*\\}"
+   "re": "if\\s*\\(\\s*weight\\s*>\\s*10\\s*\\)\\s*\\{\\s*extra\\s*=\\s*weight\\s*/\\s*2\\s*-\\s*5\\s*;\\s*\\}",
+   "desc_ko": "제약 2: weight if가 그대로: if (weight > 10) { extra = weight / 2 - 5; }"
   },
   {
    "desc": "constraint 2: the express if is unchanged: if (express == 1) { rush = 7; }",
    "type": "contains",
-   "re": "if\\s*\\(\\s*express\\s*==\\s*1\\s*\\)\\s*\\{\\s*rush\\s*=\\s*7\\s*;\\s*\\}"
+   "re": "if\\s*\\(\\s*express\\s*==\\s*1\\s*\\)\\s*\\{\\s*rush\\s*=\\s*7\\s*;\\s*\\}",
+   "desc_ko": "제약 2: express if가 그대로: if (express == 1) { rush = 7; }"
   }
- ]
+ ],
+ "title_ko": "배송비",
+ "goal_ko": "원래: 배송비는 5에 10kg을 넘는 2kg마다 1을 더하고, 합계가 100 이상이면 0입니다. express는 다루지 않습니다 (weight 14, total 50 → 7; total 80 → 7; total 100 → 0).\n변경: 합계 80부터 무료배송이고, express(express == 1)는 무료배송이어도 7을 더합니다 (total 80 → 0; total 50, express → 14; total 100, express → 7). 그 밖의 동작은 바뀌지 않습니다.\n제약: fee = base + extra + rush; 줄과 weight·express if 문은 고치지 마세요."
 }
