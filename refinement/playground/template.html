@@ -104,7 +104,12 @@ body.rawmode .rawtests{display:block}body.rawmode .lite pre.raw{max-height:70vh}
 .start{max-width:720px;margin:40px auto;padding:24px 28px;border:1px solid var(--rule);border-radius:10px;background:var(--panel);font-size:14.5px;line-height:1.6}
 .start h2{margin:0 0 10px;font-size:20px}.start p,.start ul{margin:8px 0}.start li{margin:2px 0}
 .start #startbtn{margin-top:14px;font:inherit;font-weight:600;padding:7px 22px;border-radius:6px;border:1px solid var(--flow);background:var(--flowsoft);color:var(--fg);cursor:pointer}
-body.evalpage .top .mode,body.starting .main,body.starting .top .tnav,body.starting .top select,body.starting .top label{display:none}
+body.finished .main,body.finished .top .tnav,body.finished .top select,body.finished .top label,body.finished #finishbtn{display:none}
+.start table{border-collapse:collapse;margin:10px 0;font-size:13.5px}.start th,.start td{border-bottom:1px solid var(--rule);padding:4px 10px;text-align:left}
+.start input{font:inherit;padding:4px 8px;border:1px solid var(--rule);border-radius:4px;background:var(--panel);color:var(--fg)}
+.start .acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.start .acts button{font:inherit;padding:6px 14px;border-radius:6px;border:1px solid var(--rule);background:var(--panel);color:var(--fg);cursor:pointer}
+.start .acts .primary{font-weight:600;border-color:var(--flow);background:var(--flowsoft)}
+body.evalpage .top .mode,body.starting .main,body.starting #finishbtn,body.starting .top .tnav,body.starting .top select,body.starting .top label{display:none}
 .task{border:1px solid var(--rule);border-radius:8px;background:var(--panel);padding:10px 12px;display:grid;gap:5px;font-size:13px}
 .task .th{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.task .th b{font-size:14px}
 .task .th button{margin-left:auto;font:inherit;font-size:12px;padding:2px 9px;border:1px solid var(--rule);border-radius:4px;background:none;color:var(--fg);cursor:pointer}
@@ -124,6 +129,7 @@ body.evalpage .top .mode,body.starting .main,body.starting .top .tnav,body.start
   <span class="note">edit either version — the analysis on the right updates as you type</span>
   <span class="mode" role="group" aria-label="view"><button type="button" data-mode="visual" aria-pressed="true">visual</button><button type="button" data-mode="raw" aria-pressed="false">raw output</button></span>
 </div>
+<div class="start" id="finish" hidden></div>
 <div class="start" id="start" hidden>
   <h2>Regression repair tasks</h2>
   <p>You will fix <b class="ntasks">4</b> small Java methods, one task at a time. In every task the <b>new version</b> changes the
@@ -138,7 +144,8 @@ body.evalpage .top .mode,body.starting .main,body.starting .top .tnav,body.start
     constraints hold; a task is done when it says <span class="chip eq">solved</span>. Some tasks show a visualization of how the
     two versions differ; the others show the raw output instead (a line diff, the solver log of the equivalence checker, and the
     results of running both versions on test inputs).</p>
-  <p>Use <b>prev</b> / <b>next</b> to move between tasks. Your edits are kept in this browser, so you can come back to a task.</p>
+  <p>Use <b>prev</b> / <b>next</b> to move between tasks. Your edits are kept in this browser, so you can come back to a task.
+    The time you spend on each task is measured. When you are done, press <b>finish</b> (top right) to see your results and submit them.</p>
   <button type="button" id="startbtn">Start</button>
 </div>
 <div class="main">
@@ -208,7 +215,12 @@ function update() {
   st.hk = null; st.run = null; st.dep = null; lite.sel = null;
   render(o, n);
   runLite(o, n);
-  if (EVAL && curEx !== null) { try { localStorage.setItem("eval:" + EX[curEx].name, n); } catch (e) { } }
+  if (EVAL && curEx !== null) {
+    var key = "eval:" + EX[curEx].name, before = null;
+    try { before = localStorage.getItem(key); } catch (e) { }
+    if ((before === null ? EX[curEx].new : before) !== n) { var L = mlog(); mtask(L, EX[curEx].name).edits++; msave(L); }
+    try { localStorage.setItem(key, n); } catch (e) { }
+  }
   renderTask();
 }
 
@@ -302,6 +314,14 @@ function renderTask() {
     return "<div class='ti " + c + "'><span class='ic' aria-hidden='true'>" + {ok: "✓", bad: "✗", wait: "…", na: "–"}[c] + "</span><span>" + esc(x.txt) + "</span></div>";
   };
   var solved = items.concat(keep).every(function (x) { return x.ok === true || x.ok === "na"; });
+  // measurement: the active time at which the task was first solved, and whether it is solved now
+  var waiting = items.some(function (x) { return x.ok === "wait"; });
+  if (!waiting) {
+    mtick();
+    var L = mlog(), T = mtask(L, ex.name);
+    if (solved && T.solvedMs === null) T.solvedMs = T.ms;
+    T.solved = solved; msave(L);
+  }
   box.innerHTML = "<div class='th'><b>" + esc(t.title) + "</b>" + (solved ? "<span class='chip eq'>solved</span>" : "") +
     "<button type='button' id='reset'>reset to the given new version</button></div>" +
     // the goal: before (with examples) / change / constraints, one per line
@@ -774,6 +794,69 @@ function vizPlan() {
   }
   return plan;
 }
+// ---------------------------------------------------------------- measurements (task page)
+// per task: the assigned view, active time (task on screen, page visible), active time when first solved, edits,
+// solved now, final code. Kept in this browser until "finish" submits them (or "restart" clears them).
+var meas = {cur: null, since: null, vis: true};
+function mlog() { try { return JSON.parse(localStorage.getItem("eval:log") || "{}"); } catch (e) { return {}; } }
+function msave(L) { try { localStorage.setItem("eval:log", JSON.stringify(L)); } catch (e) { } }
+function mtask(L, name) {
+  L.tasks = L.tasks || {};
+  return L.tasks[name] = L.tasks[name] || {view: vizFor(name) ? "visualization" : "raw output", ms: 0, solvedMs: null, edits: 0, solved: false};
+}
+function mtick() {
+  var now = Date.now(), counting = meas.cur !== null && meas.since !== null && meas.vis &&
+    !document.body.classList.contains("starting") && !document.body.classList.contains("finished");
+  if (counting) { var L = mlog(); mtask(L, meas.cur).ms += now - meas.since; msave(L); }
+  meas.since = now; meas.vis = !document.hidden;
+}
+if (EVAL) { setInterval(mtick, 5000); document.addEventListener("visibilitychange", mtick); window.addEventListener("pagehide", mtick); }
+function fmtTime(ms) { if (ms === null || ms === undefined) return "–"; var t = Math.round(ms / 1000); return Math.floor(t / 60) + ":" + ("0" + t % 60).slice(-2); }
+
+// the results: a table, and a GitHub issue (public) pre-filled with them
+function resultsText(pid) {
+  var L = mlog(), rows = EX.map(function (e) { var T = mtask(L, e.name), code = ""; try { code = localStorage.getItem("eval:" + e.name) || e.new; } catch (x) { code = e.new; } return {e: e, T: T, code: code}; });
+  var head = "Participant: " + (pid || "(none)") + "\nFinished: " + new Date().toISOString() + "\n\n" +
+    "| task | view | active time | solved at | edits | solved at the end |\n|---|---|---|---|---|---|\n" +
+    rows.map(function (r) { return "| " + EVAL[r.e.name].title + " | " + r.T.view + " | " + fmtTime(r.T.ms) + " | " + fmtTime(r.T.solvedMs) + " | " + r.T.edits + " | " + (r.T.solved ? "yes" : "no") + " |"; }).join("\n") + "\n";
+  var code = rows.map(function (r) { return "\n<details><summary>final code: " + EVAL[r.e.name].title + "</summary>\n\n```java\n" + r.code.replace(/\n+$/, "") + "\n```\n</details>\n"; }).join("");
+  return {head: head, code: code, rows: rows};
+}
+function issueRepo() {
+  var m = /^([^.]+)\.github\.io$/.exec(location.hostname), p = location.pathname.split("/").filter(Boolean)[0];
+  return m && p ? m[1] + "/" + p : (REPO || "healwon/ARDiff");
+}
+function showFinish() {
+  mtick();
+  var box = $("finish"), R = resultsText("");
+  box.innerHTML = "<h2>Results</h2><p>Thank you! These are your results for each task. To send them, enter your participant ID (if you were given one) and " +
+    "submit them as a GitHub issue. <b>The issue is public.</b> You need to be signed in to GitHub; the issue page opens in a new tab with everything filled in, " +
+    "and you only press <b>Submit new issue</b>.</p>" +
+    "<p><label>participant ID <input id='pid' size='16'></label></p>" +
+    "<table><tr><th>task</th><th>view</th><th>active time</th><th>solved at</th><th>edits</th><th>solved</th></tr>" +
+    R.rows.map(function (r) { return "<tr><td>" + esc(EVAL[r.e.name].title) + "</td><td>" + r.T.view + "</td><td>" + fmtTime(r.T.ms) + "</td><td>" + fmtTime(r.T.solvedMs) + "</td><td>" + r.T.edits + "</td><td>" + (r.T.solved ? "yes" : "no") + "</td></tr>"; }).join("") + "</table>" +
+    "<div class='acts'><button type='button' class='primary' id='submitissue'>Submit as a GitHub issue</button><button type='button' id='copyres'>copy results</button><button type='button' id='backtasks'>back to the tasks</button></div>" +
+    "<p class='muted' id='finmsg'></p>";
+  document.body.classList.add("finished"); box.hidden = false; window.scrollTo(0, 0);
+  var copy = function (text, done) {
+    var ok = function () { $("finmsg").textContent = done; };
+    try { navigator.clipboard.writeText(text).then(ok, function () { fallback(); }); } catch (e) { fallback(); }
+    function fallback() { var ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); ok(); } catch (e) { $("finmsg").textContent = "copy failed; select the table above instead"; } ta.remove(); }
+  };
+  $("submitissue").addEventListener("click", function () {
+    var pid = $("pid").value.trim(), R = resultsText(pid), title = "[eval] results" + (pid ? " " + pid : "") + " " + new Date().toISOString().slice(0, 16).replace("T", " ");
+    var base = "https://github.com/" + issueRepo() + "/issues/new?title=" + encodeURIComponent(title) + "&body=";
+    var url = base + encodeURIComponent(R.head + R.code);
+    if (url.length > 7500) {      // too long for a link: the code goes to the clipboard to paste below the table
+      url = base + encodeURIComponent(R.head + "\n(final code: paste it here from the clipboard)\n");
+      copy(R.code, "The final code is on the clipboard: paste it at the end of the issue text before submitting.");
+    } else $("finmsg").textContent = "The issue page opened in a new tab. Press Submit new issue there.";
+    window.open(url, "_blank", "noopener");
+  });
+  $("copyres").addEventListener("click", function () { var R = resultsText($("pid").value.trim()); copy(R.head + R.code, "Results copied to the clipboard."); });
+  $("backtasks").addEventListener("click", function () { document.body.classList.remove("finished"); box.hidden = true; meas.since = Date.now(); });
+}
+
 function vizFor(name) {
   var m = /[?&]viz=([01])\b/.exec(location.search);
   return m ? +m[1] : vizPlan()[name];
@@ -782,6 +865,8 @@ function load(i) {
   curEx = i;
   var ex = EX[i], saved = null;
   if (EVAL) {
+    mtick(); meas.cur = ex.name; meas.since = Date.now();
+    var L0 = mlog(); mtask(L0, ex.name); msave(L0);
     try { saved = localStorage.getItem("eval:" + ex.name); } catch (e) { }
     // the assigned condition: the visualization, or the raw output (line diff, ARDiff-lite's z3 log, test runs)
     rawMode = !vizFor(ex.name); document.body.classList.toggle("rawmode", rawMode);
@@ -812,7 +897,8 @@ window.addEventListener("load", function () {
     sel.addEventListener("change", function () { load(+sel.value); });
     // previous / next task
     sel.insertAdjacentHTML("afterend", "<button type='button' class='tnav' id='prevtask'>◀ prev</button><button type='button' class='tnav' id='nexttask'>next ▶</button>");
-    document.querySelector(".top .note").insertAdjacentHTML("afterend", "<button type='button' class='restart' id='restart' title='start over for a new participant'>restart</button>");
+    document.querySelector(".top .note").insertAdjacentHTML("afterend", "<button type='button' class='restart' id='finishbtn' title='see and submit your results'>finish</button><button type='button' class='restart' id='restart' title='start over for a new participant'>restart</button>");
+    $("finishbtn").addEventListener("click", showFinish);
     $("prevtask").addEventListener("click", function () { if (curEx > 0) load(curEx - 1); });
     $("nexttask").addEventListener("click", function () { if (curEx < EX.length - 1) load(curEx + 1); });
     var ti = 0; EX.forEach(function (e, i) { if ("#" + e.name === location.hash) ti = i; });
@@ -840,6 +926,7 @@ window.addEventListener("load", function () {
       try { Object.keys(localStorage).forEach(function (k) { if (k.indexOf("eval:") === 0) localStorage.removeItem(k); }); } catch (e) { }
       vizPlan();
       try { history.replaceState(null, "", location.pathname); } catch (e) { }
+      meas.cur = null; document.body.classList.remove("finished"); $("finish").hidden = true;
       document.body.classList.add("starting"); $("start").hidden = false; window.scrollTo(0, 0);
     });
   } else {
