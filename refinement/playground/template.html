@@ -53,7 +53,7 @@ select:focus-visible,button:focus-visible,.ev:focus-visible,.hk:focus-visible{ou
 .tag.changes{border-color:var(--brk);color:var(--brk)}.tag.none{border-color:var(--id);color:var(--id)}.tag.undone,.tag.together{border-color:var(--cmp);color:var(--cmp)}
 .ins{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.ins .h{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-right:2px}
 .ev{display:inline-flex;gap:8px;align-items:center;border-radius:4px;padding:2px 8px;font-family:var(--mono);font-size:12px;background:var(--flowsoft);box-shadow:inset 3px 0 0 var(--flow);cursor:pointer}
-.ev.df{box-shadow:inset 3px 0 0 var(--neq)}.ev[aria-pressed="true"]{outline:2px solid var(--flow);outline-offset:-1px}.ev .hl,.out .hl{color:var(--neq)}
+.ev.df{box-shadow:inset 3px 0 0 var(--neq)}.ev[aria-pressed="true"]{outline:2px solid var(--flow);outline-offset:-1px}.ev .hl,.out .hl{color:var(--neq)}.out .spv{color:var(--eq)}
 .svw{position:relative;overflow:auto;border:1px solid var(--rule);border-radius:8px;background:var(--panel);max-height:70vh}
 .svw table{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px}
 .svw th{font-family:var(--sans);font-size:11.5px;color:var(--muted);font-weight:500;text-align:left;padding:4px 8px;border-bottom:1px solid var(--rule);position:sticky;top:0;background:var(--panel);z-index:1}
@@ -210,6 +210,15 @@ function stepsOk(ex) {
     return a <= b;
   } catch (e) { return false; }
 }
+// task page: an input where the edit misses the spec, found by ARDiff-lite, goes first among the shown inputs
+function renderSpecCex() {
+  if (!lite.spec || !lite.spec.counterexample || !res || res.error) return;
+  var i = addInput(lite.spec.counterexample.inputs);
+  if (runs.indexOf(i) >= 0) return;
+  runs.unshift(i); renderIns(); renderRawTests(); bind();
+  if (st.run === null) st.run = i;
+  paint();
+}
 // the spec of the current task: old plus only the intended change (hidden from the page, base64)
 function taskSpec() {
   var t = EVAL && curEx !== null && EVAL[EX[curEx].name];
@@ -357,7 +366,7 @@ function runLite(o, n) {
         if (my !== lite.token) return;
         lite.result = r; renderLite();
         // the task page also asks whether the edit matches the spec (old plus only the intended change)
-        if (EVAL && taskSpec()) return ArdiffLite.analyze(taskSpec(), n, ev).then(function (q) { if (my === lite.token) { lite.spec = q; renderTask(); } });
+        if (EVAL && taskSpec()) return ArdiffLite.analyze(taskSpec(), n, ev).then(function (q) { if (my === lite.token) { lite.spec = q; renderSpecCex(); renderTask(); } });
       });
     }).catch(function (e) { if (my === lite.token) { lite.error = e.message || String(e); renderLite(); } });
   }, 500);
@@ -412,7 +421,7 @@ function renderLite() {
       render(o, n);
     }
     var i = addInput(r.counterexample.inputs);
-    if (runs.indexOf(i) < 0) {
+    if (runs.indexOf(i) < 0 && !EVAL) {      // on the task page the spec's counterexample is the one shown (renderSpecCex)
       // the counterexample takes the place of a shown input with the same coverage
       cov = {}; var s = sig(i);
       runs = runs.filter(function (j) { return sig(j) !== s; }); runs.unshift(i); renderIns(); renderRawTests(); bind();
@@ -530,6 +539,7 @@ function coverage(i) {
   var c = {}, add = function (side, t) { for (var k = 0; k < t.length; k++) c[side + (k ? t[k - 1] : "in") + ">" + t[k]] = 1; };
   try { add("o", Engine.run(res.mo, res.inputs[i], {trace: true}).trace); add("n", Engine.run(res.mn, res.inputs[i], {trace: true}).trace); } catch (e) { }
   if (res.base[i] !== res.full[i]) c.differ = 1;
+  var sp = specValue(res.inputs[i]); if (sp !== undefined && res.full[i] !== sp) c.differ = c.miss = 1;      // task page: misses the spec
   return cov[i] = c;
 }
 function sig(i) { return Object.keys(coverage(i)).sort().join(" "); }
@@ -549,18 +559,25 @@ function minimalRuns() {
     if (best < 0) break;
     pick.push(best); for (e in coverage(best)) delete left[e];
   }
-  return pick.sort(function (a, b) { return (res.base[b] !== res.full[b]) - (res.base[a] !== res.full[a]); });
+  // inputs that miss the spec (task page) first, then ones whose results differ
+  var rank = function (i) { var c = coverage(i); return (c.miss ? 2 : 0) + (c.differ ? 1 : 0); };
+  return pick.sort(function (a, b) { return rank(b) - rank(a); });
 }
 
-function outText(o, n, df) {
-  return "<span class='out'><span class='muted'>old</span> <b>" + esc(o) + "</b> <span class='muted'>new</span> <b class='" + (df ? "hl" : "") + "'>" + esc(n) + "</b></span>";
+// results of one input; on the task page also the spec's (the expected result), and new is marked when it misses it
+function outText(o, n, df, sp) {
+  return "<span class='out'><span class='muted'>old</span> <b>" + esc(o) + "</b> " +
+    (sp !== undefined ? "<span class='muted'>spec</span> <b class='spv'>" + esc(sp) + "</b> " : "") +
+    "<span class='muted'>new</span> <b class='" + (df ? "hl" : "") + "'>" + esc(n) + "</b></span>";
 }
+// the spec's result for an input (task page only)
+function specValue(inp) { try { return EVAL && taskSpec() ? Engine.run(taskInputs().spec, inp).value : undefined; } catch (e) { return undefined; } }
 
 function renderIns() {
   var cx = lite.result && lite.result.counterexample ? JSON.stringify(lite.result.counterexample.inputs) : null;
   $("ins").innerHTML = "<span class='h'>inputs</span>" + runs.map(function (i) {
-    var df = res.base[i] !== res.full[i], fromLite = cx && JSON.stringify(res.inputs[i]) === cx;
-    return "<span class='ev" + (df ? " df" : "") + "' role='button' tabindex='0' data-run='" + i + "'" + (fromLite ? " title='counterexample found by ARDiff-lite'" : "") + "><code>" + esc(inputText(res.inputs[i])) + "</code>" + outText(res.base[i], res.full[i], df) + "</span>";
+    var sp = specValue(res.inputs[i]), df = sp !== undefined ? res.full[i] !== sp : res.base[i] !== res.full[i], fromLite = cx && JSON.stringify(res.inputs[i]) === cx;
+    return "<span class='ev" + (df ? " df" : "") + "' role='button' tabindex='0' data-run='" + i + "'" + (fromLite ? " title='counterexample found by ARDiff-lite'" : "") + "><code>" + esc(inputText(res.inputs[i])) + "</code>" + outText(res.base[i], res.full[i], df, sp) + "</span>";
   }).join("");
 }
 
@@ -641,7 +658,10 @@ function paint() {
       depSources(st.dep.side === "L" ? st.so : st.sn, st.dep.line).forEach(function (l) { var c = cell(st.dep.side, l); if (c) c.classList.add("depsrc"); st.deps.push([st.dep.side, l, st.dep.line]); });
     } else st.dep = null;
   }
-  bar.innerHTML = "<b>" + esc(inputText(inp)) + "</b> &nbsp; " + outText(ro.value, rn.value, ro.value !== rn.value) + (ro.value !== rn.value ? " &nbsp; <span style='color:var(--neq)'>differ</span>" : " &nbsp; <span class='muted'>same</span>") +
+  var sv = specValue(inp), miss = sv !== undefined ? rn.value !== sv : ro.value !== rn.value;
+  bar.innerHTML = "<b>" + esc(inputText(inp)) + "</b> &nbsp; " + outText(ro.value, rn.value, miss, sv) +
+    (sv !== undefined ? (miss ? " &nbsp; <span style='color:var(--neq)'>misses the spec</span>" : " &nbsp; <span class='muted'>as the spec</span>") :
+     ro.value !== rn.value ? " &nbsp; <span style='color:var(--neq)'>differ</span>" : " &nbsp; <span class='muted'>same</span>") +
     "<button type='button' class='slb' aria-pressed='" + st.slice + "' title='dim the lines the returned value does not depend on (through data or control)'>result slice</button>" +
     " &nbsp; <span class='muted'>click a line to see where its values come from</span>";
   bar.querySelector(".slb").addEventListener("click", function () { st.slice = !st.slice; paint(); });
