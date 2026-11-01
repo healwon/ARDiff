@@ -817,8 +817,8 @@ function fmtTime(ms) { if (ms === null || ms === undefined) return "–"; var t 
 function resultsText(pid) {
   var L = mlog(), rows = EX.map(function (e) { var T = mtask(L, e.name), code = ""; try { code = localStorage.getItem("eval:" + e.name) || e.new; } catch (x) { code = e.new; } return {e: e, T: T, code: code}; });
   var head = "Participant: " + (pid || "(none)") + "\nFinished: " + new Date().toISOString() + "\n\n" +
-    "| task | view | active time | solved at | edits | solved at the end |\n|---|---|---|---|---|---|\n" +
-    rows.map(function (r) { return "| " + EVAL[r.e.name].title + " | " + r.T.view + " | " + fmtTime(r.T.ms) + " | " + fmtTime(r.T.solvedMs) + " | " + r.T.edits + " | " + (r.T.solved ? "yes" : "no") + " |"; }).join("\n") + "\n";
+    "| # | task | view | active time | solved at | edits | solved at the end |\n|---|---|---|---|---|---|---|\n" +
+    rows.map(function (r, k) { return "| " + (k + 1) + " | " + EVAL[r.e.name].title + " | " + r.T.view + " | " + fmtTime(r.T.ms) + " | " + fmtTime(r.T.solvedMs) + " | " + r.T.edits + " | " + (r.T.solved ? "yes" : "no") + " |"; }).join("\n") + "\n";
   var code = rows.map(function (r) { return "\n<details><summary>final code: " + EVAL[r.e.name].title + "</summary>\n\n```java\n" + r.code.replace(/\n+$/, "") + "\n```\n</details>\n"; }).join("");
   return {head: head, code: code, rows: rows};
 }
@@ -830,12 +830,12 @@ function showFinish() {
   mtick();
   var box = $("finish"), R = resultsText("");
   box.innerHTML = "<h2>Results</h2><p>Thank you! These are your results for each task. To send them, enter your participant ID (if you were given one) and " +
-    "submit them as a GitHub issue. <b>The issue is public.</b> You need to be signed in to GitHub; the issue page opens in a new tab with everything filled in, " +
+    "submit them as a GitHub issue, or download them as a JSON file. <b>The issue is public.</b> You need to be signed in to GitHub; the issue page opens in a new tab with everything filled in, " +
     "and you only press <b>Submit new issue</b>.</p>" +
     "<p><label>participant ID <input id='pid' size='16'></label></p>" +
-    "<table><tr><th>task</th><th>view</th><th>active time</th><th>solved at</th><th>edits</th><th>solved</th></tr>" +
-    R.rows.map(function (r) { return "<tr><td>" + esc(EVAL[r.e.name].title) + "</td><td>" + r.T.view + "</td><td>" + fmtTime(r.T.ms) + "</td><td>" + fmtTime(r.T.solvedMs) + "</td><td>" + r.T.edits + "</td><td>" + (r.T.solved ? "yes" : "no") + "</td></tr>"; }).join("") + "</table>" +
-    "<div class='acts'><button type='button' class='primary' id='submitissue'>Submit as a GitHub issue</button><button type='button' id='copyres'>copy results</button><button type='button' id='backtasks'>back to the tasks</button></div>" +
+    "<table><tr><th>#</th><th>task</th><th>view</th><th>active time</th><th>solved at</th><th>edits</th><th>solved</th></tr>" +
+    R.rows.map(function (r, k) { return "<tr><td>" + (k + 1) + "</td><td>" + esc(EVAL[r.e.name].title) + "</td><td>" + r.T.view + "</td><td>" + fmtTime(r.T.ms) + "</td><td>" + fmtTime(r.T.solvedMs) + "</td><td>" + r.T.edits + "</td><td>" + (r.T.solved ? "yes" : "no") + "</td></tr>"; }).join("") + "</table>" +
+    "<div class='acts'><button type='button' class='primary' id='submitissue'>Submit as a GitHub issue</button><button type='button' id='dljson'>download JSON</button><button type='button' id='backtasks'>back to the tasks</button></div>" +
     "<p class='muted' id='finmsg'></p>";
   document.body.classList.add("finished"); box.hidden = false; window.scrollTo(0, 0);
   var copy = function (text, done) {
@@ -853,7 +853,21 @@ function showFinish() {
     } else $("finmsg").textContent = "The issue page opened in a new tab. Press Submit new issue there.";
     window.open(url, "_blank", "noopener");
   });
-  $("copyres").addEventListener("click", function () { var R = resultsText($("pid").value.trim()); copy(R.head + R.code, "Results copied to the clipboard."); });
+  // everything recorded, as a JSON file
+  $("dljson").addEventListener("click", function () {
+    var pid = $("pid").value.trim(), R = resultsText(pid), now = new Date();
+    var data = {participant: pid || null, finished: now.toISOString(), order: EX.map(function (e) { return e.name; }),
+      tasks: R.rows.map(function (r, k) {
+        return {position: k + 1, name: r.e.name, title: EVAL[r.e.name].title, view: r.T.view, activeMs: r.T.ms, solvedAtMs: r.T.solvedMs,
+                edits: r.T.edits, solved: r.T.solved, finalCode: r.code};
+      })};
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type: "application/json"}));
+    a.download = "eval-results-" + (pid ? pid.replace(/[^\w.-]+/g, "_") + "-" : "") + now.toISOString().slice(0, 16).replace(/[:T]/g, "-") + ".json";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    $("finmsg").textContent = "Saved " + a.download + ".";
+  });
   $("backtasks").addEventListener("click", function () { document.body.classList.remove("finished"); box.hidden = true; meas.since = Date.now(); });
 }
 
@@ -886,6 +900,15 @@ window.addEventListener("load", function () {
   if (EVAL) {
     // the task page: old is fixed, the new version is the participant's; the view is set per task, not by the switch
     document.body.classList.add("evalpage");
+    // the order the tasks are presented in: drawn at random once per browser (like the views), kept until restart
+    var order = null, names = EX.map(function (e) { return e.name; });
+    try { order = JSON.parse(localStorage.getItem("eval:order") || "null"); } catch (e) { }
+    if (/[?&](restart|reassign)\b/.test(location.search) || !order || order.length !== names.length || names.some(function (n) { return order.indexOf(n) < 0; })) {
+      order = names.slice();
+      for (var oi = order.length - 1; oi > 0; oi--) { var oj = Math.floor(Math.random() * (oi + 1)), ot = order[oi]; order[oi] = order[oj]; order[oj] = ot; }
+      try { localStorage.setItem("eval:order", JSON.stringify(order)); } catch (e) { }
+    }
+    EX.sort(function (a, b) { return order.indexOf(a.name) - order.indexOf(b.name); });
     document.title = "Regression Repair Tasks";
     document.querySelector(".top h1").textContent = "Regression Repair Tasks";
     document.querySelector(".top label").textContent = "task";
@@ -893,7 +916,7 @@ window.addEventListener("load", function () {
     if (cmOld.setOption) cmOld.setOption("readOnly", true);
     document.querySelector("label[for=old]").textContent = "old version (fixed)";
     document.querySelector("label[for=new]").textContent = "new version (edit this)";
-    sel.innerHTML = EX.map(function (e, i) { return "<option value='" + i + "'>" + esc(EVAL[e.name].title) + "</option>"; }).join("");
+    sel.innerHTML = EX.map(function (e, i) { return "<option value='" + i + "'>" + (i + 1) + ". " + esc(EVAL[e.name].title) + "</option>"; }).join("");
     sel.addEventListener("change", function () { load(+sel.value); });
     // previous / next task
     sel.insertAdjacentHTML("afterend", "<button type='button' class='tnav' id='prevtask'>◀ prev</button><button type='button' class='tnav' id='nexttask'>next ▶</button>");
@@ -924,10 +947,8 @@ window.addEventListener("load", function () {
       }
       clearTimeout(armed); armed = null; btn.textContent = "restart"; btn.classList.remove("armed");
       try { Object.keys(localStorage).forEach(function (k) { if (k.indexOf("eval:") === 0) localStorage.removeItem(k); }); } catch (e) { }
-      vizPlan();
-      try { history.replaceState(null, "", location.pathname); } catch (e) { }
-      meas.cur = null; document.body.classList.remove("finished"); $("finish").hidden = true;
-      document.body.classList.add("starting"); $("start").hidden = false; window.scrollTo(0, 0);
+      // a fresh load draws a new task order and new views, and shows the start page
+      meas.cur = null; location.replace(location.pathname);
     });
   } else {
     // one group per example folder
