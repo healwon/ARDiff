@@ -1,0 +1,16 @@
+{
+ "title": "Shipping fee",
+ "goal": "Intended changes: shipping is now free from a total of 80 (it was 100), and express orders (express == 1) cost 7 more, even when shipping is free. Keep the fee assembled from the named parts base, extra and rush. Everything else must behave as before.",
+ "keep": [
+  {
+   "desc": "the fee is still built from named parts: base, extra and rush",
+   "type": "contains",
+   "re": "int\\s+base\\b[\\s\\S]*int\\s+extra\\b[\\s\\S]*int\\s+rush\\b"
+  },
+  {
+   "desc": "the weight surcharge stays in its new form: weight / 2 - 5",
+   "type": "contains",
+   "re": "weight\\s*/\\s*2\\s*-\\s*5"
+  }
+ ]
+}

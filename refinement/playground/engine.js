@@ -430,8 +430,14 @@ function inputSet(params, limit, consts) {
     })(0, {});
     return out;
   }
+  // mulberry32: deterministic and well mixed (a plain LCG's low bits cycle, so with 3+ parameters some values never came up)
   var seed = 12345;
-  function rnd(n) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; }
+  function rnd(n) {
+    seed = (seed + 0x6D2B79F5) | 0;
+    var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return (((t ^ (t >>> 14)) >>> 0) % n);
+  }
   var zero = {}; params.forEach(function (p) { zero[p.name] = p.type === "Z" ? false : 0; });
   out.push(zero);
   params.forEach(function (p, i) { doms[i].forEach(function (v) { var o = Object.assign({}, zero); o[p.name] = v; out.push(o); }); });

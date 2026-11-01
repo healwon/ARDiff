@@ -1,0 +1,21 @@
+{
+ "title": "Overtime and holidays",
+ "goal": "Intended change: on a holiday (holiday == 1) every hour is paid at twice the rate. Keep the split into regular and over hours with Math.min / Math.max. Everything else must behave as before.",
+ "keep": [
+  {
+   "desc": "regular hours come from Math.min(hours, 40)",
+   "type": "contains",
+   "re": "regular\\s*=\\s*Math\\.min\\s*\\(\\s*hours\\s*,\\s*40\\s*\\)"
+  },
+  {
+   "desc": "overtime hours come from Math.max(hours - 40, 0)",
+   "type": "contains",
+   "re": "over\\s*=\\s*Math\\.max\\s*\\(\\s*hours\\s*-\\s*40\\s*,\\s*0\\s*\\)"
+  },
+  {
+   "desc": "no if / else on hours <= 40 any more",
+   "type": "absent",
+   "re": "hours\\s*<=\\s*40"
+  }
+ ]
+}

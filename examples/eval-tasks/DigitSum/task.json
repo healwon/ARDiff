@@ -1,0 +1,16 @@
+{
+ "title": "Digit sum",
+ "goal": "Intended change: a negative n now counts by its digits (as Math.abs(n) does). Keep adding the last digit after the loop. Everything else must behave as before.",
+ "keep": [
+  {
+   "desc": "negative numbers use their absolute value: Math.abs(n)",
+   "type": "contains",
+   "re": "Math\\.abs\\s*\\(\\s*n\\s*\\)"
+  },
+  {
+   "desc": "the last digit is still added after the loop: sum = sum + m",
+   "type": "contains",
+   "re": "\\}\\s*sum\\s*=\\s*sum\\s*\\+\\s*m\\s*;"
+  }
+ ]
+}

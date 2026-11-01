@@ -105,7 +105,10 @@ function abstract(stmts, side, maps, concrete, seen, methods, keep) {
     if (id !== null && !concrete[id] && !hasReturn(s) && Object.keys(varsDefined(s)).length && !opaque(s, methods) &&
         !Object.keys(varsDefined(s)).some(function (v) { return keep[v]; })) {
       seen[id] = seen[id] || {line: id, text: null, side: side};
-      return {k: "uf", id: id, defs: varsDefined(s), reads: varsRead(s), l0: s.l0, l1: s.l1};
+      // an if or a loop may leave a variable it writes unchanged, so that variable's current value is an input too
+      var defs = varsDefined(s), reads = varsRead(s);
+      if (s.k !== "assign" && s.k !== "decl") Object.keys(defs).forEach(function (v) { reads[v] = 1; });
+      return {k: "uf", id: id, defs: defs, reads: reads, l0: s.l0, l1: s.l1};
     }
     if (s.k === "block") return Object.assign({}, s, {body: abstract(s.body, side, maps, concrete, seen, methods, keep)});
     if (s.k === "if") return Object.assign({}, s, {then: abstract([s.then], side, maps, concrete, seen, methods, keep)[0], els: s.els ? abstract([s.els], side, maps, concrete, seen, methods, keep)[0] : null});

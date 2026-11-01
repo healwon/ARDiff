@@ -1,0 +1,16 @@
+{
+ "title": "Member discount",
+ "goal": "Intended change: the 5% member discount now applies only to orders whose total (price * qty) is at least 100. Keep collecting the discounts in pct. Everything else must behave as before; if part of the refactoring cannot behave as before, change that part.",
+ "keep": [
+  {
+   "desc": "the member discount is conditional on the order total: member == 1 && total >= 100",
+   "type": "contains",
+   "re": "member\\s*==\\s*1\\s*&&\\s*total\\s*>=\\s*100"
+  },
+  {
+   "desc": "the discounts are still collected in pct",
+   "type": "contains",
+   "re": "pct\\s*=\\s*pct\\s*\\+\\s*10[\\s\\S]*pct\\s*=\\s*pct\\s*\\+\\s*5"
+  }
+ ]
+}

@@ -1,45 +1,51 @@
-# 평가 task: 최소 수정으로 동작 되돌리기
+# 평가 task: 의도된 변경은 남기고 regression만 없애기
 
-각 폴더의 `newV`는 `oldV`를 고친 버전입니다. 그 안에는 **유지해야 할 변경**(리팩터링)과 **동작을 바꾼 변경**이 섞여 있습니다.
-참가자는 `newV`에서 시작해 `oldV`와 같은 동작이 되도록 고치되, 유지할 변경은 남기고 수정은 최소로 해야 합니다.
-그래서 "바뀐 줄을 그냥 되돌리기(rollback)"는 대부분 오답입니다. 유지할 변경을 버리거나, 다른 변경과 얽혀 있어서 새로운 차이를 만들기 때문입니다.
+각 폴더의 `newV`는 `oldV`를 고친 버전입니다. 그 안에는 세 가지가 섞여 있습니다.
 
-| task | 유지할 변경 | 동작을 바꾼 변경 | 최소 수정 (`fixedV`) | 단순 rollback (`revertedV`) |
+- **의도된 동작 변경:** 결과가 old와 달라지는 것이 맞는 변경입니다. 반드시 남아야 합니다.
+- **리팩터링:** 동작은 그대로 두고 코드 모양을 바꾼 것입니다. 남겨야 합니다.
+- **의도하지 않은 regression:** 위 두 가지에 섞여 들어간 실수입니다. 없애야 합니다.
+
+목표 동작은 `specV`(old에 의도된 변경만 넣은 버전)입니다. 고친 코드는 spec과 같아야 하므로, 전체를 old로 되돌리면 의도된 변경을 잃어서 오답이고, 바뀐 줄만 되돌려도 다른 변경과 얽혀 있어서 대부분 오답입니다.
+
+| task | 의도된 변경 (남김) | 리팩터링 (남김) | regression | 참고 수정 (`fixedV`) |
 |---|---|---|---|---|
-| `NamedGrade` | 기준값을 `pass`, `top` 변수로 뺌, 두 번째 등급은 `g = g + 1` | `score > top` (90점이 1등급) | `>` → `>=` | `score >= 90`: 동작은 같지만 이름 붙인 기준값을 버림 |
-| `CentsPay` | 금액을 센트 단위(×100)로 | 보너스 기준 `40000` (`405 × 100 = 40500`이어야 함) | `40000` → `40500` | `pay > 405`: 센트와 원 단위를 비교해서 **다른 오답** (`hours = 0`부터 보너스) |
-| `StepSum` | 짝수 판정 대신 2씩 증가하는 루프 | `i <= n` (n이 짝수면 n을 더함) | `<=` → `<` | `i++`로 되돌리면 짝수 판정이 없어서 **모든 수를 더하는 오답** |
-| `UnitTax` (대조군) | — | 세금을 단가에서 계산 (`price / 10 * qty`, 나머지 손실) | rollback 자체가 정답 | 정답. 유지할 수 있는 형태가 없다는 것을 알아차리는지 봄 |
+| `Shipping` | 무료배송 기준 100 → 80, express(`express == 1`)는 무료여도 +7 | 요금을 `base`, `extra`, `rush`로 나눠 조립, `weight / 2 - 5` | `total > 80` (80은 무료가 아님), 무료 처리가 express 요금까지 0으로 만듦 | `>=`로, `rush`는 무료 판정 뒤에 더함 |
+| `OvertimeRate` | 휴일(`holiday == 1`)은 모든 시간을 시급의 2배로 | `Math.min` / `Math.max`로 일반·초과 시간 분리 | `over * (rate * 3 / 2)`: 1.5배를 시간마다 내림해서 홀수 시급에서 다름 | `over * rate * 3 / 2` |
+| `MemberDiscount` | 회원 5% 할인은 주문 합계(`price * qty`) 100 이상일 때만 | 할인율을 `pct`에 모음 | `total * pct / 100`: 두 할인을 따로 내림하던 것과 반올림이 달라짐 (리팩터링의 일부를 고쳐야 함) | `pct`는 두고 두 부분을 따로 내림 |
+| `DigitSum` | 음수는 절댓값의 자릿수 합 (`Math.abs(n)`) | 마지막 자리는 루프 뒤에서 더함 | `while (m > 10)`: 10, 100~109, 1000~1099 … 에서 틀림 | `m >= 10` |
+
+검증 (spec과 비교, 넓은 범위 전수 실행 / ARDiff-lite):
+
+| task | old | new (주어진 것) | fixed |
+|---|---|---|---|
+| `Shipping` | 다름 · NOT EQUIVALENT (의도된 변경) | 5913/41553 다름 · NOT EQUIVALENT | 같음 · EQUIVALENT |
+| `OvertimeRate` | 다름 · NOT EQUIVALENT | 1560/11193 다름 · NOT EQUIVALENT | 같음 · EQUIVALENT |
+| `MemberDiscount` | 다름 · NOT EQUIVALENT | 603/12558 다름 · NOT EQUIVALENT | 같음 · EQUIVALENT |
+| `DigitSum` | 다름 · NOT EQUIVALENT | 222/4001 다름 · NOT EQUIVALENT | 같음 · EQUIVALENT |
 
 ## 과제 페이지 (`eval.html`)
 
 사이트의 `eval.html`에서 과제를 바로 풀 수 있습니다. old는 고정(읽기 전용)이고 new를 고치면 오른쪽 체크리스트가 실시간으로 바뀝니다.
 
-- **no regression:** 테스트 입력 전부에서 old와 같은 결과인지, ARDiff-lite가 EQUIVALENT인지
-- **keep:** 각 폴더 `task.json`의 `keep` 항목. `contains`/`absent`는 주석을 뺀 코드에 정규식이 있는지/없는지, `steps`는 테스트 입력에서 실행한 문장 수가 주어진 new 이하인지(속도 개선 유지)
-- **edit size:** 주어진 new에서 바뀐 토큰 수와 참고 수정(`fixedV`)의 토큰 수. 페이지에는 `fixedV` 자체는 들어가지 않고 토큰 수만 들어갑니다.
+- **behaviour:** spec과 old 양쪽 상수로 만든 테스트 입력에서
+  - spec이 old와 다른 입력에서는 spec을 따르는지 (의도된 변경이 남아 있는지)
+  - 그 밖의 입력에서는 old와 같은지 (regression이 없는지)
+  - ARDiff-lite가 spec과 EQUIVALENT라고 하는지
+- **keep:** 각 폴더 `task.json`의 `keep` 항목. `contains`/`absent`는 주석을 뺀 코드에 정규식이 있는지/없는지입니다.
+- **edit size:** 주어진 new에서 바뀐 토큰 수와 참고 수정의 토큰 수.
+- 페이지에는 spec이 base64로 들어가 있고(체크용), `fixedV`는 들어가지 않습니다(토큰 수만).
 - 모두 통과하면 `solved`가 뜹니다. 고친 코드는 브라우저에 과제별로 저장되고, `reset`으로 처음 new로 돌아갑니다.
-- `eval.html?viz=0`은 시각화를 숨기고 에디터와 체크리스트만 보여줍니다(비교군용). `eval.html#CentsPay`처럼 과제를 바로 열 수 있습니다.
+- `eval.html?viz=0`은 시각화를 숨기고 에디터와 체크리스트만 보여줍니다(비교군용). `eval.html#Shipping`처럼 과제를 바로 열 수 있습니다.
 
 ## 참가자에게 주는 지시
 
-> `newV`의 리팩터링(위 표의 "유지할 변경")은 그대로 두고, `oldV`와 모든 입력에서 같은 결과를 내도록 `newV`를 최소한으로 고치세요.
-> 리팩터링을 유지한 채로는 같게 만들 수 없다면 그 이유를 쓰고 해당 변경을 되돌리세요.
+> 과제 설명에 적힌 의도된 변경과 리팩터링은 남기고, 그 밖의 동작은 old와 같아지도록 `newV`를 최소한으로 고치세요.
+> 리팩터링의 일부가 old와 같은 동작을 낼 수 없다면 그 부분만 바꾸세요.
 
 ## 채점
 
-1. **동작:** 고친 코드가 `oldV`와 같은지 확인합니다. 테스트와 ARDiff(-lite)로 EQUIVALENT여야 합니다.
-2. **유지:** 표의 "유지할 변경"이 남아 있어야 합니다. `NamedGrade`의 `revertedV`처럼 동작은 같아도 리팩터링을 버리면 감점입니다.
-3. **크기:** `fixedV`와 비교한 수정 토큰 수입니다.
-4. **(선택) 근거:** 어떤 입력에서 달랐는지(반례) 답하게 하면, 시각화가 반례를 찾는 데 도움이 됐는지 볼 수 있습니다.
-
-`CentsPay`는 일반 테스트 입력(코드의 상수 ±1)으로는 차이가 드러나지 않습니다(`hours = 40`에서만 다름). ARDiff-lite가 반례를 찾아야 보입니다.
-
-검증 결과 (테스트 입력 / ARDiff-lite):
-
-| task | old vs new | old vs fixed | old vs reverted |
-|---|---|---|---|
-| `NamedGrade` | 1/37 다름 · NOT EQUIVALENT | 같음 · EQUIVALENT | 같음 · EQUIVALENT (리팩터링 손실) |
-| `CentsPay` | 0/38 다름 · NOT EQUIVALENT (`hours = 40`) | 같음 · EQUIVALENT | 12/38 다름 · NOT EQUIVALENT |
-| `StepSum` | 5/25 다름 · NOT EQUIVALENT | 같음 · EQUIVALENT | 13/25 다름 · NOT EQUIVALENT |
-| `UnitTax` | 322/625 다름 · NOT EQUIVALENT | 같음 · EQUIVALENT | 같음 · EQUIVALENT |
+1. **동작:** spec과 같아야 합니다(테스트, ARDiff-lite).
+2. **유지:** `task.json`의 keep 항목을 모두 만족해야 합니다.
+3. **크기:** 참고 수정과 비교한 바뀐 토큰 수.
+4. **(선택) 근거:** 어떤 입력에서 무엇이 잘못됐는지(반례) 답하게 하면, 시각화가 regression과 의도된 변경을 구분하는 데 도움이 됐는지 볼 수 있습니다.

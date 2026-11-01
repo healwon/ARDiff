@@ -200,18 +200,62 @@ function stepsOk(ex) {
     return a <= b;
   } catch (e) { return false; }
 }
+// the spec of the current task: old plus only the intended change (hidden from the page, base64)
+function taskSpec() {
+  var t = EVAL && curEx !== null && EVAL[EX[curEx].name];
+  return t && t.spec ? decodeURIComponent(escape(atob(t.spec))) : null;
+}
+// the edit against the spec on a fixed set of inputs per task: boundary and random values from the constants of old,
+// spec and the given new, plus inputs where spec and old differ (so the intended change is always exercised) and
+// ARDiff-lite's counterexample. Where the spec differs from old the result must follow the spec (the intended
+// change); everywhere else it must stay as old (no regression).
+var taskIn = {};
+function taskInputs() {
+  var ex = EX[curEx];
+  if (taskIn[ex.name]) return taskIn[ex.name];
+  var mo = Engine.parseMethod(ex.old), ms = Engine.parseMethod(taskSpec()), consts = [];
+  (Engine.stripComments(ex.old) + "\n" + Engine.stripComments(taskSpec()) + "\n" + Engine.stripComments(ex.new)).replace(/\b\d+\b(?!\.)/g, function (m) { if (consts.indexOf(+m) < 0) consts.push(+m); return m; });
+  var base = Engine.inputSet(mo.params, 2500, consts), pool = Engine.inputSet(mo.params, 30000, consts).slice(base.length), more = [];
+  for (var i = 0; i < pool.length && more.length < 300; i++) { try { if (Engine.run(mo, pool[i]).value !== Engine.run(ms, pool[i]).value) more.push(pool[i]); } catch (e) { } }
+  return taskIn[ex.name] = {inputs: base.concat(more), old: mo, spec: ms};
+}
+var specCache = {key: null};
+function specCheck(src) {
+  var cx = lite.spec && lite.spec.counterexample ? lite.spec.counterexample.inputs : null, key = src + "\u0000" + JSON.stringify(cx);
+  if (specCache.key === key) return specCache.v;
+  var v = {intended: 0, intendedOk: 0, other: 0, otherOk: 0}, ti, me;
+  try { ti = taskInputs(); me = Engine.parseMethod(src); } catch (e) { v.error = e.message || String(e); specCache = {key: key, v: v}; return v; }
+  var ins = cx ? ti.inputs.concat([cx]) : ti.inputs, t0 = Date.now();
+  for (var i = 0; i < ins.length; i++) {
+    if (Date.now() - t0 > 1500) { v.capped = true; break; }
+    var inp = ins[i], old = Engine.run(ti.old, inp).value, want = Engine.run(ti.spec, inp).value, got;
+    try { got = Engine.run(me, inp).value; } catch (e) { v.error = e.message || String(e); break; }
+    if (want !== old) { v.intended++; if (got === want) v.intendedOk++; else if (!v.missEx) v.missEx = {inp: inp, want: want, got: got, old: old}; }
+    else { v.other++; if (got === want) v.otherOk++; else if (!v.regEx) v.regEx = {inp: inp, want: want, got: got}; }
+  }
+  specCache = {key: key, v: v};
+  return v;
+}
 function renderTask() {
   var box = $("task"), ex = EVAL && curEx !== null ? EX[curEx] : null, t = ex && EVAL[ex.name];
   if (!t) { if (box) box.hidden = true; return; }
   box.hidden = false;
   var src = cmNew.getValue(), clean = Engine.stripComments(src), runs = res && !res.error && !res.unsupported, items = [];
-  items.push({ok: runs && !res.diffIdx.length, txt: !runs ? "does not run: " + ((res && (res.error || res.unsupported)) || "") :
-    res.diffIdx.length ? "differs from the old version on " + res.diffIdx.length + " of " + res.inputs.length + " tested inputs, e.g. " + inputText(res.inputs[res.diffIdx[0]]) :
-    "same result as the old version on all " + res.inputs.length + " tested inputs"});
-  var lv = lite.error ? null : lite.result ? lite.result.verdict : undefined;
+  var sc = runs ? specCheck(src) : {error: (res && (res.error || res.unsupported)) || "does not run"};
+  if (sc.error) items.push({ok: false, txt: "does not run: " + sc.error});
+  else {
+    items.push({ok: sc.intendedOk === sc.intended, txt: sc.intendedOk === sc.intended ?
+      "intended change in place: follows the spec on all " + sc.intended + " tested inputs where it should differ from old" :
+      "intended change missing on " + (sc.intended - sc.intendedOk) + " of " + sc.intended + " inputs, e.g. " + inputText(sc.missEx.inp) + ": should be " + sc.missEx.want + " (old " + sc.missEx.old + "), is " + sc.missEx.got});
+    items.push({ok: sc.otherOk === sc.other, txt: sc.otherOk === sc.other ?
+      "nothing else changed: same as old on all " + sc.other + " other tested inputs" :
+      "unintended difference on " + (sc.other - sc.otherOk) + " of " + sc.other + " inputs, e.g. " + inputText(sc.regEx.inp) + ": should stay " + sc.regEx.want + ", is " + sc.regEx.got});
+  }
+  var lv = lite.error ? null : lite.spec ? lite.spec.verdict : undefined;
   items.push({ok: lv === null ? "na" : lv === undefined ? "wait" : lv === "EQUIVALENT",
-    txt: lv === null ? "ARDiff-lite unavailable here (it runs on the GitHub Pages version)" : lv === undefined ? "ARDiff-lite: checking…" :
-         "ARDiff-lite: " + lv + (lite.result.counterexample ? " — e.g. " + inputText(lite.result.counterexample.inputs) + ": old " + lite.result.counterexample.old + ", new " + lite.result.counterexample.new : "")});
+    txt: lv === null ? "ARDiff-lite unavailable here (it runs on the GitHub Pages version)" : lv === undefined ? "ARDiff-lite against the spec: checking…" :
+         lv === "EQUIVALENT" ? "ARDiff-lite: equivalent to the spec" : "ARDiff-lite against the spec: " + lv +
+         (lite.spec.counterexample ? " — e.g. " + inputText(lite.spec.counterexample.inputs) + ": should be " + lite.spec.counterexample.old + ", is " + lite.spec.counterexample.new : "")});
   var keep = t.keep.map(function (k) {
     var ok = k.type === "contains" ? new RegExp(k.re).test(clean) : k.type === "absent" ? !new RegExp(k.re).test(clean) : k.type === "steps" ? runs && stepsOk(ex) : false;
     return {ok: ok, txt: k.desc};
@@ -223,7 +267,7 @@ function renderTask() {
   var solved = items.concat(keep).every(function (x) { return x.ok === true || x.ok === "na"; });
   box.innerHTML = "<div class='th'><b>" + esc(t.title) + "</b>" + (solved ? "<span class='chip eq'>solved</span>" : "") +
     "<button type='button' id='reset'>reset to the given new version</button></div><p>" + esc(t.goal) + "</p>" +
-    "<div class='tg'>no regression</div>" + items.map(li).join("") +
+    "<div class='tg'>behaviour</div>" + items.map(li).join("") +
     (keep.length ? "<div class='tg'>keep</div>" + keep.map(li).join("") : "") +
     "<div class='tsize muted'>edit size: " + editTokens(ex.new, src) + " tokens changed from the given new version (reference fix: " + t.refTokens + ")</div>";
   $("reset").addEventListener("click", function () { cmNew.setValue(ex.new); });
@@ -285,7 +329,7 @@ function z3() {
 }
 function runLite(o, n) {
   var box = $("lite"), my = ++lite.token;
-  lite.result = null; lite.error = null;
+  lite.result = null; lite.error = null; lite.spec = null;
   if (!window.ArdiffLite || !res || res.error) { box.hidden = true; return; }
   box.hidden = false;
   box.innerHTML = "<div class='lh'><b>ARDiff-lite</b><span class='muted'>" + (lite.z3 ? "running…" : "loading z3…") + "</span></div>";
@@ -294,7 +338,12 @@ function runLite(o, n) {
     z3().then(function (ev) {
       if (my !== lite.token) return;
       box.querySelector(".muted").textContent = "running…";
-      return ArdiffLite.analyze(o, n, ev).then(function (r) { if (my === lite.token) { lite.result = r; renderLite(); } });
+      return ArdiffLite.analyze(o, n, ev).then(function (r) {
+        if (my !== lite.token) return;
+        lite.result = r; renderLite();
+        // the task page also asks whether the edit matches the spec (old plus only the intended change)
+        if (EVAL && taskSpec()) return ArdiffLite.analyze(taskSpec(), n, ev).then(function (q) { if (my === lite.token) { lite.spec = q; renderTask(); } });
+      });
     }).catch(function (e) { if (my === lite.token) { lite.error = e.message || String(e); renderLite(); } });
   }, 500);
 }
