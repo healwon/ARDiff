@@ -20,7 +20,7 @@
 *{box-sizing:border-box}[hidden]{display:none!important}
 html,body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5}
 .top{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--rule);background:var(--panel)}
-.top h1{font-size:17px;margin:0}.top .home{color:var(--flow);font-size:13px;text-decoration:none}.top .home:hover{text-decoration:underline}.top .sp{flex:1}
+.top h1{font-size:17px;margin:0}.top .tnav{font:inherit;font-size:12px;padding:3px 9px;border:1px solid var(--rule);border-radius:4px;background:var(--panel);color:var(--fg);cursor:pointer}.top .tnav:disabled{opacity:.4;cursor:default}.top .home{color:var(--flow);font-size:13px;text-decoration:none}.top .home:hover{text-decoration:underline}.top .sp{flex:1}
 select,button{font:inherit;font-size:13px;color:var(--fg);background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:3px 9px;cursor:pointer}
 select:focus-visible,button:focus-visible,.ev:focus-visible,.hk:focus-visible{outline:2px solid var(--ctx);outline-offset:2px}
 .main{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:0;min-height:calc(100vh - 54px)}
@@ -750,10 +750,33 @@ function draw() {
   });
 }
 
+// task page: which tasks show the visualization. Each browser draws once, at random, half of the tasks with it and
+// half without, and keeps that; ?viz=1 / ?viz=0 force one way for every task, ?reassign draws again
+function vizPlan() {
+  var key = "eval:vizplan", plan = null, names = EX.map(function (e) { return e.name; });
+  try { plan = JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { }
+  if (/[?&]reassign\b/.test(location.search) || !plan || names.some(function (n) { return !(n in plan); })) {
+    var order = names.slice();
+    for (var i = order.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = order[i]; order[i] = order[j]; order[j] = t; }
+    plan = {}; order.forEach(function (n, k) { plan[n] = k < Math.ceil(order.length / 2) ? 1 : 0; });
+    try { localStorage.setItem(key, JSON.stringify(plan)); } catch (e) { }
+  }
+  return plan;
+}
+function vizFor(name) {
+  var m = /[?&]viz=([01])\b/.exec(location.search);
+  return m ? +m[1] : vizPlan()[name];
+}
 function load(i) {
   curEx = i;
   var ex = EX[i], saved = null;
-  if (EVAL) { try { saved = localStorage.getItem("eval:" + ex.name); } catch (e) { } }
+  if (EVAL) {
+    try { saved = localStorage.getItem("eval:" + ex.name); } catch (e) { }
+    document.body.classList.toggle("noviz", !vizFor(ex.name));
+    $("ex").value = i;
+    var pv = $("prevtask"), nx = $("nexttask"); if (pv) pv.disabled = i === 0; if (nx) nx.disabled = i === EX.length - 1;
+    try { history.replaceState(null, "", location.pathname + location.search + "#" + ex.name); } catch (e) { }
+  }
   cmOld.setValue(ex.old); cmNew.setValue(saved || ex.new);
   clearTimeout(timer); update();
 }
@@ -772,9 +795,12 @@ window.addEventListener("load", function () {
     if (cmOld.setOption) cmOld.setOption("readOnly", true);
     document.querySelector("label[for=old]").textContent = "old version (fixed)";
     document.querySelector("label[for=new]").textContent = "new version (edit this)";
-    if (/[?&]viz=0\b/.test(location.search)) document.body.classList.add("noviz");
     sel.innerHTML = EX.map(function (e, i) { return "<option value='" + i + "'>" + esc(EVAL[e.name].title) + "</option>"; }).join("");
     sel.addEventListener("change", function () { load(+sel.value); });
+    // previous / next task
+    sel.insertAdjacentHTML("afterend", "<button type='button' class='tnav' id='prevtask'>◀ prev</button><button type='button' class='tnav' id='nexttask'>next ▶</button>");
+    $("prevtask").addEventListener("click", function () { if (curEx > 0) load(curEx - 1); });
+    $("nexttask").addEventListener("click", function () { if (curEx < EX.length - 1) load(curEx + 1); });
     var ti = 0; EX.forEach(function (e, i) { if ("#" + e.name === location.hash) ti = i; });
     sel.value = ti; load(ti);
   } else {
