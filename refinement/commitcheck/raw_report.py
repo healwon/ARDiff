@@ -61,9 +61,9 @@ def page(dirs):
 <title>ARDiff Raw Output</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
 <style>{CSS}</style>
-<header class="hd"><h1>ARDiff raw output</h1>
+<header class="hd"><a class="home" href="index.html">← home</a><h1>ARDiff raw output</h1>
 <select id="pick" aria-label="pair">{''.join(f'<option value="{p["uid"]}">{html.escape(p["name"])}</option>' for p in data)}</select>
-<span id="vd" class="chip"></span><a class="back" href="index.html">visualization →</a></header>
+<span id="vd" class="chip"></span></header>
 <div class="main"><nav id="files" aria-label="files"></nav><section class="view"><div id="fn" class="fn"></div><pre id="txt"></pre></section></div>
 <script>var DATA={json.dumps(data).replace("</", "<\\/")};{JS}</script>"""
 
@@ -78,7 +78,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-
 .hd{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--rule)}
 h1{font-size:18px;margin:0}select{font:inherit;font-family:var(--mono);font-size:13px;padding:4px 6px;background:var(--panel);color:var(--fg);border:1px solid var(--rule);border-radius:4px;max-width:100%}
 .chip{font-family:var(--mono);font-size:12px;border:1px solid currentColor;border-radius:10px;padding:1px 8px}.chip.eq{color:var(--eq)}.chip.neq{color:var(--neq)}.chip.unk{color:var(--unk)}
-.back{margin-left:auto;color:var(--acc);font-size:13px}
+.home{color:var(--acc);font-size:13px;text-decoration:none}.home:hover{text-decoration:underline}
 .main{flex:1;display:flex;min-height:0}
 nav{width:250px;flex:none;overflow:auto;border-right:1px solid var(--rule);padding:8px 0;background:var(--panel)}
 nav h3{font-size:12px;margin:10px 14px 4px;color:var(--muted);font-weight:600;display:flex;gap:6px;align-items:baseline}

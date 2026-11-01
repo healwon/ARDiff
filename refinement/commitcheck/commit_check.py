@@ -649,7 +649,7 @@ def write_html(path, label, entries, viewer_ok):
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
 <style>{CSS}{semview.CSS}</style>
 <div class="wrap">
-<header><h1>ARDiff Commit Check</h1><div class="muted">{h(label)}</div></header>
+<header><a href="index.html">← home</a><h1>ARDiff Commit Check</h1><div class="muted">{h(label)}</div></header>
 <div class="counts">{chips or "<span class='muted'>바뀐 메서드 없음</span>"}</div>
 {summary_table(rows) if many else ""}
 {''.join(cards)}
