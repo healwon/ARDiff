@@ -1,0 +1,16 @@
+{
+ "title": "Tutorial 2: smaller value",
+ "title_ko": "튜토리얼 2: 더 작은 값",
+ "tutorial": true,
+ "view": "raw output",
+ "goal": "Before: returns the smaller of a and b (a 3, b 5 → 3; a 80, b 90 → 80).\nChange: the result is now never above 50 (a 80, b 90 → 50); nothing else changes.\nConstraints: do not change the if statement that keeps the result at 50 or below.",
+ "goal_ko": "원래: a와 b 중 작은 값을 반환합니다 (a 3, b 5 → 3; a 80, b 90 → 80).\n변경: 이제 결과가 50보다 커지지 않습니다 (a 80, b 90 → 50). 그 밖의 동작은 바뀌지 않습니다.\n제약: 결과를 50 이하로 맞추는 if 문은 고치지 마세요.",
+ "keep": [
+  {
+   "desc": "constraint 1: the if statement is unchanged: if (r > 50) { r = 50; }",
+   "desc_ko": "제약 1: if 문이 그대로: if (r > 50) { r = 50; }",
+   "type": "contains",
+   "re": "if\\s*\\(\\s*r\\s*>\\s*50\\s*\\)\\s*\\{\\s*r\\s*=\\s*50\\s*;\\s*\\}"
+  }
+ ]
+}
