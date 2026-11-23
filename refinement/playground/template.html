@@ -104,6 +104,9 @@ body.rawmode .rawtests{display:block}body.rawmode .lite pre.raw{max-height:70vh}
 .start{max-width:720px;margin:40px auto;padding:24px 28px;border:1px solid var(--rule);border-radius:10px;background:var(--panel);font-size:14.5px;line-height:1.6}
 .start h2{margin:0 0 10px;font-size:20px}.start p,.start ul{margin:8px 0}.start li{margin:2px 0}
 .start #startbtn{margin-top:14px;font:inherit;font-weight:600;padding:7px 22px;border-radius:6px;border:1px solid var(--flow);background:var(--flowsoft);color:var(--fg);cursor:pointer}
+body.surveying .main,body.surveying .top .tnav,body.surveying .top select,body.surveying .top label,body.surveying #finishbtn{display:none}
+.start .q{margin:14px 0}.start .q .qt{font-weight:600;margin-bottom:6px}.start .q label{margin-right:14px;white-space:nowrap}.start .q textarea{width:100%;min-height:60px;font:inherit;padding:6px;border:1px solid var(--rule);border-radius:4px;background:var(--panel);color:var(--fg)}
+.start .scale{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}.start .scale .end{color:var(--muted);font-size:12.5px}
 body.finished .main,body.finished .top .tnav,body.finished .top select,body.finished .top label,body.finished #finishbtn{display:none}
 .start table{border-collapse:collapse;margin:10px 0;font-size:13.5px}.start th,.start td{border-bottom:1px solid var(--rule);padding:4px 10px;text-align:left}
 .start input{font:inherit;padding:4px 8px;border:1px solid var(--rule);border-radius:4px;background:var(--panel);color:var(--fg)}
@@ -130,6 +133,7 @@ body.evalpage .top .mode:not(.lang),body.starting .main,body.starting #finishbtn
   <span class="mode" role="group" aria-label="view"><button type="button" data-mode="visual" aria-pressed="true">visual</button><button type="button" data-mode="raw" aria-pressed="false">raw output</button></span>
 </div>
 <div class="start" id="finish" hidden></div>
+<div class="start" id="survey" hidden></div>
 <div class="start" id="start" hidden>
   <h2>Regression repair tasks</h2>
   <p>You will fix <b class="ntasks">4</b> small Java methods, one task at a time. In every task the <b>new version</b> changes the
@@ -182,6 +186,11 @@ body.evalpage .top .mode:not(.lang),body.starting .main,body.starting #finishbtn
 (function () {
 var EX = /*__EXAMPLES__*/[];
 var EVAL = /*__EVAL__*/null;
+var SURVEY = /*__SURVEY__*/null;  // task page: questions before and after the tasks ({pre: [...], post: [...]})
+// the tutorial task (task.json "tutorial": true): always first, always with the visualization, outside the random order
+function isTut(name) { return !!(EVAL && EVAL[name] && EVAL[name].tutorial); }
+// how a task is numbered: "T" for the tutorial, 1, 2, … for the others in the order they are presented
+function posLabel(i) { var n = 0; for (var k = 0; k <= i; k++) if (!isTut(EX[k].name)) n++; return isTut(EX[i].name) ? "T" : String(n); }
 // ---------------------------------------------------------------- language (English / 한국어): ?lang=ko|en, else the last choice
 var LANG = (function () {
   var m = /[?&]lang=(ko|en)\b/.exec(location.search);
@@ -223,6 +232,10 @@ var KO = {
   "Saved {0}.": "{0}로 저장했어요.", "copy failed; select the table above instead": "복사하지 못했어요. 위 표를 직접 선택해 복사하세요.",
   "The first method of each class is compared. Supported: int / double / boolean parameters, assignments, if / else, for / while / do, return, Math.min / max / abs and other Math functions. Java int semantics (32-bit overflow, division toward zero).":
     "각 클래스의 첫 번째 메서드를 비교합니다. 지원: int / double / boolean 매개변수, 대입, if / else, for / while / do, return, Math.min / max / abs 등 Math 함수. Java int 의미(32비트 오버플로, 0 쪽으로 버리는 나눗셈)를 따릅니다.",
+  "Before the tasks": "과제 전 설문", "After the tasks": "과제 후 설문", "A few questions about you first.": "먼저 몇 가지 질문에 답해 주세요.",
+  "A few questions about the tasks you just did.": "방금 한 과제에 대해 몇 가지 질문에 답해 주세요.", "Continue": "계속",
+  "TUTORIAL_NOTE": "<b>T</b>로 표시된 첫 과제는 화면에 익숙해지기 위한 짧은 튜토리얼이며 결과에 포함되지 않습니다.",
+  "SURVEY_NOTE": "과제 전과 후에 짧은 설문이 있습니다.",
   "edit either version — the analysis on the right updates as you type": "어느 버전이든 고치면 오른쪽 분석이 바로 바뀌어요", "old version": "기존 버전", "new version": "새 버전", "example": "예시"
 };
 var KO_START = '<h2>회귀 수정 과제</h2>' +
@@ -234,8 +247,10 @@ var KO_START = '<h2>회귀 수정 과제</h2>' +
   '<p><b>이전</b> / <b>다음</b>으로 과제를 옮겨 다닐 수 있고, 고친 코드는 이 브라우저에 남아 다시 돌아와도 이어서 할 수 있습니다. 과제마다 걸린 시간을 측정합니다. ' +
   '다 마치면 오른쪽 위 <b>완료</b>를 눌러 결과를 확인하고 제출하세요.</p><button type="button" id="startbtn">시작</button>';
 // English text in, the current language out; {0}, {1}, … are filled with the remaining arguments
+var EN = {"TUTORIAL_NOTE": "The first task, marked <b>T</b>, is a short tutorial to get used to the page; it is not counted.",
+          "SURVEY_NOTE": "There are a few short questions before the tasks and after them."};
 function tr(en) {
-  var s = LANG === "ko" && KO[en] !== undefined ? KO[en] : en;
+  var s = LANG === "ko" && KO[en] !== undefined ? KO[en] : EN[en] !== undefined ? EN[en] : en;
   for (var i = 1; i < arguments.length; i++) s = s.split("{" + (i - 1) + "}").join(arguments[i]);
   return s;
 }
@@ -844,7 +859,7 @@ function draw() {
 // task page: which tasks show the visualization (the others show the raw output). Each browser draws once, at random,
 // half of the tasks with it and half without, and keeps that; ?viz=1 / ?viz=0 force one way for every task
 function vizPlan() {
-  var key = "eval:vizplan", plan = null, names = EX.map(function (e) { return e.name; });
+  var key = "eval:vizplan", plan = null, names = EX.filter(function (e) { return !isTut(e.name); }).map(function (e) { return e.name; });
   try { plan = JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { }
   if (/[?&](restart|reassign)\b/.test(location.search) || !plan || names.some(function (n) { return !(n in plan); })) {
     var order = names.slice();
@@ -873,14 +888,60 @@ function mtick() {
 if (EVAL) { setInterval(mtick, 5000); document.addEventListener("visibilitychange", mtick); window.addEventListener("pagehide", mtick); }
 function fmtTime(ms) { if (ms === null || ms === undefined) return "–"; var t = Math.round(ms / 1000); return Math.floor(t / 60) + ":" + ("0" + t % 60).slice(-2); }
 
+// ---------------------------------------------------------------- surveys (task page): before the tasks and after them
+function sget() { try { return JSON.parse(localStorage.getItem("eval:survey") || "{}"); } catch (e) { return {}; } }
+function sput(S) { try { localStorage.setItem("eval:survey", JSON.stringify(S)); } catch (e) { } }
+function qtext(q, k) { return LANG === "ko" && q[k + "_ko"] !== undefined ? q[k + "_ko"] : q[k]; }
+function showSurvey(phase, done) {
+  var qs = (SURVEY && SURVEY[phase]) || []; if (!qs.length) { done(); return; }
+  var box = $("survey"), ans = sget()[phase] || {};
+  var field = function (q) {
+    var name = "q_" + q.id, v = ans[q.id];
+    if (q.type === "text") return "<textarea name='" + name + "'>" + esc(v || "") + "</textarea>";
+    if (q.type === "number") return "<input type='number' min='0' name='" + name + "' value='" + esc(v === undefined ? "" : v) + "'>";
+    if (q.type === "scale") return "<div class='scale'><span class='end'>" + esc(qtext(q, "low")) + "</span>" + [1, 2, 3, 4, 5].map(function (x) {
+      return "<label><input type='radio' name='" + name + "' value='" + x + "'" + (+v === x ? " checked" : "") + "> " + x + "</label>"; }).join("") + "<span class='end'>" + esc(qtext(q, "high")) + "</span></div>";
+    var opts = qtext(q, "options") || [];
+    return q.options.map(function (o, i) { return "<label><input type='radio' name='" + name + "' value='" + esc(o) + "'" + (v === o ? " checked" : "") + "> " + esc(opts[i] || o) + "</label>"; }).join("");
+  };
+  box.innerHTML = "<h2>" + tr(phase === "pre" ? "Before the tasks" : "After the tasks") + "</h2><p>" + tr(phase === "pre" ? "A few questions about you first." : "A few questions about the tasks you just did.") + "</p>" +
+    qs.map(function (q) { return "<div class='q'><div class='qt'>" + esc(qtext(q, "text")) + "</div>" + field(q) + "</div>"; }).join("") +
+    "<div class='acts'><button type='button' class='primary' id='survnext'>" + tr("Continue") + "</button>" +
+    (phase === "post" ? "<button type='button' id='survback'>" + tr("back to the tasks") + "</button>" : "") + "</div>";
+  document.body.classList.add("surveying"); box.hidden = false; window.scrollTo(0, 0);
+  var collect = function () {
+    var a = {};
+    qs.forEach(function (q) {
+      var name = "q_" + q.id;
+      if (q.type === "text") a[q.id] = box.querySelector("[name=" + name + "]").value.trim();
+      else if (q.type === "number") { var nv = box.querySelector("[name=" + name + "]").value; a[q.id] = nv === "" ? null : +nv; }
+      else { var c = box.querySelector("[name=" + name + "]:checked"); a[q.id] = c ? (q.type === "scale" ? +c.value : c.value) : null; }
+    });
+    var S = sget(); S[phase] = a; sput(S);
+  };
+  var close = function () { document.body.classList.remove("surveying"); box.hidden = true; };
+  $("survnext").addEventListener("click", function () { collect(); close(); done(); });
+  var back = $("survback"); if (back) back.addEventListener("click", function () { collect(); close(); meas.since = Date.now(); });
+}
+function surveyText() {
+  var S = sget(), out = "";
+  ["pre", "post"].forEach(function (ph) {
+    var qs = (SURVEY && SURVEY[ph]) || []; if (!qs.length) return;
+    out += "\n### Survey (" + (ph === "pre" ? "before" : "after") + ")\n\n" + qs.map(function (q) {
+      var v = (S[ph] || {})[q.id]; return "- " + q.text + " **" + (v === null || v === undefined || v === "" ? "(no answer)" : String(v).replace(/\n+/g, " ")) + "**";
+    }).join("\n") + "\n";
+  });
+  return out;
+}
+
 // the results: a table, and a GitHub issue (public) pre-filled with them
 function resultsText(pid) {
   var L = mlog(), rows = EX.map(function (e) { var T = mtask(L, e.name), code = ""; try { code = localStorage.getItem("eval:" + e.name) || e.new; } catch (x) { code = e.new; } return {e: e, T: T, code: code}; });
   var head = "Participant: " + (pid || "(none)") + "\nFinished: " + new Date().toISOString() + "\nLanguage: " + LANG + "\n\n" +
     "| # | task | view | active time | solved at | edits | solved at the end |\n|---|---|---|---|---|---|---|\n" +
-    rows.map(function (r, k) { return "| " + (k + 1) + " | " + EVAL[r.e.name].title + " | " + r.T.view + " | " + fmtTime(r.T.ms) + " | " + fmtTime(r.T.solvedMs) + " | " + r.T.edits + " | " + (r.T.solved ? "yes" : "no") + " |"; }).join("\n") + "\n";
+    rows.map(function (r, k) { return "| " + posLabel(k) + " | " + EVAL[r.e.name].title + " | " + r.T.view + " | " + fmtTime(r.T.ms) + " | " + fmtTime(r.T.solvedMs) + " | " + r.T.edits + " | " + (r.T.solved ? "yes" : "no") + " |"; }).join("\n") + "\n";
   var code = rows.map(function (r) { return "\n<details><summary>final code: " + EVAL[r.e.name].title + "</summary>\n\n```java\n" + r.code.replace(/\n+$/, "") + "\n```\n</details>\n"; }).join("");
-  return {head: head, code: code, rows: rows};
+  return {head: head + surveyText(), code: code, rows: rows};
 }
 function issueRepo() {
   var m = /^([^.]+)\.github\.io$/.exec(location.hostname), p = location.pathname.split("/").filter(Boolean)[0];
@@ -894,7 +955,7 @@ function showFinish() {
     "and you only press <b>Submit new issue</b>.") + "</p>" +
     "<p><label>" + tr("participant ID") + " <input id='pid' size='16'></label></p>" +
     "<table><tr><th>#</th><th>" + tr("task") + "</th><th>" + tr("view") + "</th><th>" + tr("active time") + "</th><th>" + tr("solved at") + "</th><th>" + tr("edits") + "</th><th>" + tr("solved") + "</th></tr>" +
-    R.rows.map(function (r, k) { return "<tr><td>" + (k + 1) + "</td><td>" + esc(ttitle(EVAL[r.e.name])) + "</td><td>" + tr(r.T.view) + "</td><td>" + fmtTime(r.T.ms) + "</td><td>" + fmtTime(r.T.solvedMs) + "</td><td>" + r.T.edits + "</td><td>" + (r.T.solved ? tr("yes") : tr("no")) + "</td></tr>"; }).join("") + "</table>" +
+    R.rows.map(function (r, k) { return "<tr><td>" + posLabel(k) + "</td><td>" + esc(ttitle(EVAL[r.e.name])) + "</td><td>" + tr(r.T.view) + "</td><td>" + fmtTime(r.T.ms) + "</td><td>" + fmtTime(r.T.solvedMs) + "</td><td>" + r.T.edits + "</td><td>" + (r.T.solved ? tr("yes") : tr("no")) + "</td></tr>"; }).join("") + "</table>" +
     "<div class='acts'><button type='button' class='primary' id='submitissue'>" + tr("Submit as a GitHub issue") + "</button><button type='button' id='dljson'>" + tr("download JSON") + "</button><button type='button' id='backtasks'>" + tr("back to the tasks") + "</button></div>" +
     "<p class='muted' id='finmsg'></p>";
   document.body.classList.add("finished"); box.hidden = false; window.scrollTo(0, 0);
@@ -916,9 +977,9 @@ function showFinish() {
   // everything recorded, as a JSON file
   $("dljson").addEventListener("click", function () {
     var pid = $("pid").value.trim(), R = resultsText(pid), now = new Date();
-    var data = {participant: pid || null, finished: now.toISOString(), lang: LANG, order: EX.map(function (e) { return e.name; }),
+    var data = {participant: pid || null, finished: now.toISOString(), lang: LANG, survey: sget(), order: EX.map(function (e) { return e.name; }),
       tasks: R.rows.map(function (r, k) {
-        return {position: k + 1, name: r.e.name, title: EVAL[r.e.name].title, view: r.T.view, activeMs: r.T.ms, solvedAtMs: r.T.solvedMs,
+        return {position: isTut(r.e.name) ? 0 : +posLabel(k), tutorial: isTut(r.e.name), name: r.e.name, title: EVAL[r.e.name].title, view: r.T.view, activeMs: r.T.ms, solvedAtMs: r.T.solvedMs,
                 edits: r.T.edits, solved: r.T.solved, finalCode: r.code};
       })};
     var a = document.createElement("a");
@@ -932,6 +993,7 @@ function showFinish() {
 }
 
 function vizFor(name) {
+  if (isTut(name)) return 1;
   var m = /[?&]viz=([01])\b/.exec(location.search);
   return m ? +m[1] : vizPlan()[name];
 }
@@ -979,14 +1041,14 @@ window.addEventListener("load", function () {
     // the task page: old is fixed, the new version is the participant's; the view is set per task, not by the switch
     document.body.classList.add("evalpage");
     // the order the tasks are presented in: drawn at random once per browser (like the views), kept until restart
-    var order = null, names = EX.map(function (e) { return e.name; });
+    var order = null, names = EX.filter(function (e) { return !isTut(e.name); }).map(function (e) { return e.name; });
     try { order = JSON.parse(localStorage.getItem("eval:order") || "null"); } catch (e) { }
     if (/[?&](restart|reassign)\b/.test(location.search) || !order || order.length !== names.length || names.some(function (n) { return order.indexOf(n) < 0; })) {
       order = names.slice();
       for (var oi = order.length - 1; oi > 0; oi--) { var oj = Math.floor(Math.random() * (oi + 1)), ot = order[oi]; order[oi] = order[oj]; order[oj] = ot; }
       try { localStorage.setItem("eval:order", JSON.stringify(order)); } catch (e) { }
     }
-    EX.sort(function (a, b) { return order.indexOf(a.name) - order.indexOf(b.name); });
+    EX.sort(function (a, b) { return (isTut(b.name) - isTut(a.name)) || order.indexOf(a.name) - order.indexOf(b.name); });
     document.title = tr("Regression Repair Tasks");
     document.querySelector(".top h1").textContent = tr("Regression Repair Tasks");
     document.querySelector(".top label").textContent = tr("task");
@@ -995,24 +1057,30 @@ window.addEventListener("load", function () {
     if (cmOld.setOption) cmOld.setOption("readOnly", true);
     document.querySelector("label[for=old]").textContent = tr("old version (fixed)");
     document.querySelector("label[for=new]").textContent = tr("new version (edit this)");
-    sel.innerHTML = EX.map(function (e, i) { return "<option value='" + i + "'>" + (i + 1) + ". " + esc(ttitle(EVAL[e.name])) + "</option>"; }).join("");
+    sel.innerHTML = EX.map(function (e, i) { return "<option value='" + i + "'>" + posLabel(i) + ". " + esc(ttitle(EVAL[e.name])) + "</option>"; }).join("");
     sel.addEventListener("change", function () { load(+sel.value); });
     // previous / next task
     sel.insertAdjacentHTML("afterend", "<button type='button' class='tnav' id='prevtask'>" + tr("◀ prev") + "</button><button type='button' class='tnav' id='nexttask'>" + tr("next ▶") + "</button>");
     document.querySelector(".top .note").insertAdjacentHTML("afterend", "<button type='button' class='restart' id='finishbtn' title='" + tr("see and submit your results") + "'>" + tr("finish") + "</button><button type='button' class='restart' id='restart' title='" + tr("start over for a new participant") + "'>" + tr("restart") + "</button>");
-    $("finishbtn").addEventListener("click", showFinish);
+    $("finishbtn").addEventListener("click", function () { mtick(); showSurvey("post", showFinish); });
     $("prevtask").addEventListener("click", function () { if (curEx > 0) load(curEx - 1); });
     $("nexttask").addEventListener("click", function () { if (curEx < EX.length - 1) load(curEx + 1); });
     var ti = 0; EX.forEach(function (e, i) { if ("#" + e.name === location.hash) ti = i; });
     // start page on the first visit (and after restart); then straight to the tasks
     var started = false; try { started = localStorage.getItem("eval:started") === "1"; } catch (e) { }
-    document.querySelector("#start .ntasks").textContent = EX.length;
+    var nreal = EX.filter(function (e) { return !isTut(e.name); }).length;
+    document.querySelector("#start .ntasks").textContent = nreal;
+    if (nreal < EX.length) document.querySelector("#start ul").insertAdjacentHTML("afterend", "<p>" + tr("TUTORIAL_NOTE") + "</p>");
+    if (SURVEY && ((SURVEY.pre || []).length || (SURVEY.post || []).length)) $("startbtn").insertAdjacentHTML("beforebegin", "<p>" + tr("SURVEY_NOTE") + "</p>");
     var begin = function (i) {
       document.body.classList.remove("starting"); $("start").hidden = true;
       try { localStorage.setItem("eval:started", "1"); } catch (e) { }
       sel.value = i; load(i);
     };
-    $("startbtn").addEventListener("click", function () { begin(0); });
+    $("startbtn").addEventListener("click", function () {
+      document.body.classList.remove("starting"); $("start").hidden = true;
+      showSurvey("pre", function () { begin(0); });
+    });
     if (started) begin(ti); else { document.body.classList.add("starting"); $("start").hidden = false; }
     // a new participant: new visualization assignment, no saved edits, back to the start page. Confirmed by a second
     // click (a confirm() dialog is blocked inside embedded pages, where it silently counts as "cancel")

@@ -42,6 +42,9 @@
 - 헤더의 **restart**: 새 참가자용. 한 번 더 눌러 확인하면 배정을 새로 뽑고 저장된 수정을 모두 지운 뒤 시작 페이지로 돌아갑니다.
 - 과제마다 배정된 화면, 활동 시간(그 과제가 화면에 있고 탭이 보이는 동안), 처음 solved가 된 활동 시간, 수정 횟수, 마지막 solved 여부, 마지막 코드를 기록합니다. 헤더의 **finish**를 누르면 결과 표가 나오고, **Submit as a GitHub issue**로 이 저장소에 `[eval] results <참가자 ID> <시각>` 제목의 **공개** 이슈가 미리 채워진 채 열립니다(참가자는 GitHub에 로그인해서 Submit만 누름). 링크가 너무 길면 코드는 클립보드로 복사해서 붙여 넣게 합니다. **download JSON**은 같은 내용(참가자 ID, 제출 시각, 제시 순서, 과제별 위치·화면·활동 시간(ms)·solved 시각(ms)·수정 횟수·solved 여부·마지막 코드)을 JSON 파일로 저장합니다.
 - 헤더의 **EN / 한국어**로 화면 언어를 바꿀 수 있고 선택이 유지됩니다(`?lang=ko` / `?lang=en`으로 지정 가능). 과제 설명과 제약 문구는 `task.json`의 `title_ko`, `goal_ko`, `desc_ko`를 씁니다. 코드와 raw output은 번역하지 않고, 이슈와 JSON은 영어로 남기되 사용한 언어(`Language` / `lang`)를 기록합니다.
+- **튜토리얼**(`Tutorial/`, `task.json`의 `"tutorial": true`): 항상 맨 앞(메뉴에 `T`로 표시), 항상 시각화, 무작위 순서·배정에서 빠지며 결과에는 `tutorial: true` / 위치 0으로 기록됩니다. 의도된 변경은 "결과가 0보다 작아지지 않음", 회귀는 `else`에서 `b` 대신 `a`를 쓰는 복사 실수(참고 수정 1토큰)입니다.
+- **설문**(`survey.json`): Start 뒤 과제 전 설문, finish 뒤 과제 후 설문이 나옵니다. 질문 형식은 `number`, `choice`(`options` / `options_ko`), `scale`(1–5, `low` / `high`), `text`이고, 답은 이슈와 JSON(`survey.pre`, `survey.post`)에 들어갑니다. 질문은 파일만 고치면 바뀝니다. 답하지 않아도 넘어갈 수 있습니다.
+- 과제가 5개가 되면서 이슈 링크에 코드까지 넣기에는 길어서, 보통은 코드를 클립보드로 복사해 붙여 넣는 방식이 됩니다(JSON에는 항상 코드가 들어갑니다).
 - `eval.html?viz=1` / `?viz=0`은 모든 과제를 시각화 / raw output으로 고정합니다. `eval.html#Shipping`처럼 과제를 바로 열 수 있습니다.
 
 ## 참가자에게 주는 지시

@@ -72,8 +72,11 @@ def main():
         # NEq first: the interesting ones
         examples += sorted(group, key=lambda e: (not re.search(r"(^|/)NEq(/|$)", e["name"]), e["name"].lower()))
 
-    evals = None
+    evals, survey = None, None
     if a.eval:
+        sp = os.path.join(a.eval, "survey.json")      # questions asked before and after the tasks (optional)
+        if os.path.exists(sp):
+            survey = json.load(open(sp))
         examples, evals = [], {}
         for t in sorted(os.listdir(a.eval)):
             d = os.path.join(a.eval, t)
@@ -88,6 +91,7 @@ def main():
 
     page = open(os.path.join(HERE, "template.html")).read()
     page = page.replace("/*__EVAL__*/null", json.dumps(evals).replace("</", "<\\/"))
+    page = page.replace("/*__SURVEY__*/null", json.dumps(survey).replace("</", "<\\/"))
     page = page.replace("/*__CM_CSS__*/", open(os.path.join(HERE, "codemirror-5.65.16.min.css")).read())
     page = page.replace("/*__ENGINE__*/", open(os.path.join(HERE, "engine.js")).read().replace("</script", "<\\/script"))
     page = page.replace("/*__EXAMPLES__*/[]", json.dumps(examples).replace("</", "<\\/"))
