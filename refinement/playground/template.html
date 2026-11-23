@@ -211,7 +211,7 @@ var KO = {
   "inputs": "입력", "misses the spec": "spec과 다름", "as the spec": "spec과 같음", "differ": "다름", "same": "같음",
   "result slice": "결과 슬라이스", "dim the lines the returned value does not depend on (through data or control)": "반환값이 (데이터나 제어로) 기대지 않는 줄을 흐리게",
   "click a line to see where its values come from": "줄을 누르면 그 값이 어디서 왔는지 보여요", "no code changes": "바뀐 코드 없음", "(none)": "(없음)",
-  "running…": "실행 중…", "loading z3…": "z3 불러오는 중…", "unavailable: {0}": "사용할 수 없음: {0}", "re-implemented in the browser": "브라우저에서 다시 구현",
+  "running…": "실행 중…", "loading z3…": "z3 불러오는 중…", "unavailable: {0}": "사용할 수 없음: {0}",
   "raw z3 log": "z3 로그 원본", "original ARDiff raw output ↗": "원래 ARDiff 출력 원본 ↗",
   "does not run: {0}": "실행되지 않음: {0}",
   "intended change in place: follows the spec on all {0} tested inputs where it should differ from old": "의도된 변경 반영됨: old와 달라야 하는 테스트 입력 {0}개 모두에서 spec과 같음",
@@ -469,7 +469,7 @@ function runLite(o, n) {
   lite.result = null; lite.error = null; lite.spec = null;
   if (!window.ArdiffLite || !res || res.error) { box.hidden = true; return; }
   box.hidden = false;
-  box.innerHTML = "<div class='lh'><b>ARDiff-lite</b><span class='muted'>" + (lite.z3 ? tr("running…") : tr("loading z3…")) + "</span></div>";
+  box.innerHTML = "<div class='lh'><b title='abstraction-refinement with z3 running in this page; a re-implementation, not the original ARDiff'>ARDiff-lite</b><span class='muted'>" + (lite.z3 ? tr("running…") : tr("loading z3…")) + "</span></div>";
   setTimeout(function () {
     if (my !== lite.token) return;
     z3().then(function (ev) {
@@ -513,7 +513,7 @@ function origRaw() {
 function renderLite() {
   renderTask();
   var box = $("lite"), r = lite.result;
-  if (lite.error) { box.innerHTML = "<div class='lh'><b>ARDiff-lite</b><span class='muted'>" + esc(tr("unavailable: {0}", lite.error)) + "</span></div>"; return; }
+  if (lite.error) { box.innerHTML = "<div class='lh'><b title='abstraction-refinement with z3 running in this page; a re-implementation, not the original ARDiff'>ARDiff-lite</b><span class='muted'>" + esc(tr("unavailable: {0}", lite.error)) + "</span></div>"; return; }
   if (!r) return;
   var cls = {"EQUIVALENT": "eq", "NOT EQUIVALENT": "neq"}[r.verdict] || "unk";
   var steps = r.iterations.map(function (it) {
@@ -522,9 +522,9 @@ function renderLite() {
     return "<button type='button' class='it " + mark + "' data-it='" + it.iter + "' title='" + esc(what + " — " + it.abstracted.length + " statements abstracted" + (it.model ? " — model " + inputText(it.model) : "")) + "'>" + it.iter + " " + what + "</button>" +
       (it.pick ? "<span class='arr'>refine L" + it.pick + " →</span>" : "");
   }).join("");
-  box.innerHTML = "<div class='lh'><b>ARDiff-lite</b><span class='chip " + cls + "'>" + esc(r.verdict) + "</span>" +
+  box.innerHTML = "<div class='lh'><b title='abstraction-refinement with z3 running in this page; a re-implementation, not the original ARDiff'>ARDiff-lite</b><span class='chip " + cls + "'>" + esc(r.verdict) + "</span>" +
     (r.reason ? "<span class='muted'>" + esc(r.reason) + "</span>" : "") +
-    "<span class='muted' title='abstraction-refinement with z3 running in this page; a re-implementation, not the original ARDiff'>" + tr("re-implemented in the browser") + "</span></div>" +
+    "</div>" +
     "<div class='its'>" + steps + "</div>" +
     "<div class='rawh'><button type='button' class='rawb' aria-expanded='" + lite.raw + "'>" + tr("raw z3 log") + "</button>" +
     (origRaw() ? "<a href='" + esc(origRaw()) + "' target='ardiff-raw'>" + tr("original ARDiff raw output ↗") + "</a>" : "") + "</div>" +
