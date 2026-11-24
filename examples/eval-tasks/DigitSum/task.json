@@ -1,26 +1,7 @@
 {
  "title": "Digit sum",
- "goal": "Before: returns the sum of the decimal digits of n, and 0 for a negative n (123 → 6, 10 → 1, -123 → 0).\nChange: a negative n is now summed by its digits as well, as if it were positive (-123 → 6); nothing else changes.\nConstraints: do not change the loop body or the line m = n;, and the while condition must still compare against 10.",
- "keep": [
-  {
-   "desc": "constraint 1: the loop body is unchanged (sum = sum + abs(m) % 10; m = m / 10;)",
-   "type": "contains",
-   "re": "while\\s*\\(.*\\)\\s*\\{\\s*sum\\s*=\\s*sum\\s*\\+\\s*abs\\s*\\(\\s*m\\s*\\)\\s*%\\s*10\\s*;\\s*m\\s*=\\s*m\\s*/\\s*10\\s*;\\s*\\}",
-   "desc_ko": "제약 1: 루프 본문이 그대로 (sum = sum + abs(m) % 10; m = m / 10;)"
-  },
-  {
-   "desc": "constraint 2: the while condition still compares against 10",
-   "type": "contains",
-   "re": "while\\s*\\(\\s*(abs\\s*\\(\\s*m\\s*\\)|m)\\s*(>=|>|<=|<|==|!=)\\s*10\\s*\\)",
-   "desc_ko": "제약 2: while 조건이 계속 10과 비교함"
-  },
-  {
-   "desc": "constraint 3: the line m = n; is unchanged",
-   "type": "contains",
-   "re": "\\bm\\s*=\\s*n\\s*;",
-   "desc_ko": "제약 3: m = n; 줄이 그대로"
-  }
- ],
+ "goal": "Old version: returns the sum of the decimal digits of n, and 0 for a negative n (123 → 6, 10 → 1, -123 → 0).\nGoal: change the new version so that it returns the same result as the old version for every input. Do not copy the old version over the new one; change the new version as little as possible.",
+ "keep": [],
  "title_ko": "자릿수 합",
- "goal_ko": "원래: n의 십진수 자릿수 합을 반환하고, n이 음수이면 0을 반환합니다 (123 → 6, 10 → 1, -123 → 0).\n변경: 음수 n도 양수처럼 자릿수 합을 구합니다 (-123 → 6). 그 밖의 동작은 바뀌지 않습니다.\n제약: 루프 본문과 m = n; 줄은 고치지 마세요. while 조건은 계속 10과 비교해야 합니다."
+ "goal_ko": "기존 버전: n의 십진수 자릿수 합을 반환하고, n이 음수이면 0을 반환합니다 (123 → 6, 10 → 1, -123 → 0).\n목표: 모든 입력에서 기존 버전과 같은 결과를 내도록 새 버전을 고치세요. 기존 버전을 그대로 복사해 넣지 말고, 새 버전을 최소한으로 고치세요."
 }

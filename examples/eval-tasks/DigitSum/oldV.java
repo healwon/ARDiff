@@ -1,6 +1,6 @@
 public class oldV {
-    // before: returns the sum of the decimal digits of n
-    //         n should be positive; returns 0 when n is negative
+    // Returns the sum of the decimal digits of n
+    // n should be positive; returns 0 when n is negative
     public static double snippet(int n) {
         int sum = 0;
         int m = 0;

@@ -1,20 +1,7 @@
 {
  "title": "Member discount",
- "goal": "Before: returns price * qty minus 10% from 10 items, and another 5% for members (member == 1); each discount is taken from the unit price and rounded down (price 40, qty 2, member → 76; price 40, qty 3, member → 114).\nChange: the member discount now applies only when the order total price * qty is at least 100 (price 40, qty 2, member → 80); nothing else changes.\nConstraints: do not change either of the two if statements.",
- "keep": [
-  {
-   "desc": "constraint 1: the first if is unchanged: if (qty >= 10) { pct = pct + 10; }",
-   "type": "contains",
-   "re": "if\\s*\\(\\s*qty\\s*>=\\s*10\\s*\\)\\s*\\{\\s*pct\\s*=\\s*pct\\s*\\+\\s*10\\s*;\\s*\\}",
-   "desc_ko": "제약 1: 첫 번째 if가 그대로: if (qty >= 10) { pct = pct + 10; }"
-  },
-  {
-   "desc": "constraint 1: the second if is unchanged: if (member == 1 && total >= 100) { pct = pct + 5; }",
-   "type": "contains",
-   "re": "if\\s*\\(\\s*member\\s*==\\s*1\\s*&&\\s*total\\s*>=\\s*100\\s*\\)\\s*\\{\\s*pct\\s*=\\s*pct\\s*\\+\\s*5\\s*;\\s*\\}",
-   "desc_ko": "제약 1: 두 번째 if가 그대로: if (member == 1 && total >= 100) { pct = pct + 5; }"
-  }
- ],
+ "goal": "Old version: returns price * qty minus 10% from 10 items, and another 5% for members (member == 1); each discount is taken from the unit price and rounded down (price 40, qty 2, member → 76; price 40, qty 3, member → 114).\nGoal: change the new version so that it returns the same result as the old version for every input. Do not copy the old version over the new one; change the new version as little as possible.",
+ "keep": [],
  "title_ko": "회원 할인",
- "goal_ko": "원래: price * qty에서 10개 이상이면 10%, 회원(member == 1)이면 5%를 더 할인합니다. 각 할인은 단가에서 계산해 내림합니다 (price 40, qty 2, 회원 → 76; price 40, qty 3, 회원 → 114).\n변경: 회원 할인은 주문 합계 price * qty가 100 이상일 때만 적용합니다 (price 40, qty 2, 회원 → 80). 그 밖의 동작은 바뀌지 않습니다.\n제약: 두 if 문은 고치지 마세요."
+ "goal_ko": "기존 버전: price * qty에서 10개 이상이면 10%, 회원(member == 1)이면 5%를 더 할인합니다. 각 할인은 단가에서 계산해 내림합니다 (price 40, qty 2, 회원 → 76; price 40, qty 3, 회원 → 114).\n목표: 모든 입력에서 기존 버전과 같은 결과를 내도록 새 버전을 고치세요. 기존 버전을 그대로 복사해 넣지 말고, 새 버전을 최소한으로 고치세요."
 }

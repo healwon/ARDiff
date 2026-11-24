@@ -2,15 +2,8 @@
  "title": "Tutorial 1: larger value",
  "title_ko": "튜토리얼 1: 더 큰 값",
  "tutorial": true,
- "goal": "Before: returns the larger of a and b (a 3, b 5 → 5; a -4, b -2 → -2).\nChange: the result is now never below 0 (a -4, b -2 → 0); nothing else changes.\nConstraints: do not change the if statement that keeps the result at 0 or above.",
- "goal_ko": "원래: a와 b 중 큰 값을 반환합니다 (a 3, b 5 → 5; a -4, b -2 → -2).\n변경: 이제 결과가 0보다 작아지지 않습니다 (a -4, b -2 → 0). 그 밖의 동작은 바뀌지 않습니다.\n제약: 결과를 0 이상으로 맞추는 if 문은 고치지 마세요.",
- "keep": [
-  {
-   "desc": "constraint 1: the if statement is unchanged: if (r < 0) { r = 0; }",
-   "desc_ko": "제약 1: if 문이 그대로: if (r < 0) { r = 0; }",
-   "type": "contains",
-   "re": "if\\s*\\(\\s*r\\s*<\\s*0\\s*\\)\\s*\\{\\s*r\\s*=\\s*0\\s*;\\s*\\}"
-  }
- ],
+ "goal": "Old version: returns the larger of a and b (a 3, b 5 → 5; a -4, b -2 → -2).\nGoal: change the new version so that it returns the same result as the old version for every input. Do not copy the old version over the new one; change the new version as little as possible.",
+ "goal_ko": "기존 버전: a와 b 중 큰 값을 반환합니다 (a 3, b 5 → 5; a -4, b -2 → -2).\n목표: 모든 입력에서 기존 버전과 같은 결과를 내도록 새 버전을 고치세요. 기존 버전을 그대로 복사해 넣지 말고, 새 버전을 최소한으로 고치세요.",
+ "keep": [],
  "view": "visualization"
 }

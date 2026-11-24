@@ -1,60 +1,50 @@
-# 평가 task: 의도된 변경은 남기고 regression만 없애기
+# 평가 task: 새 버전을 기존 버전과 같게 만들기
 
-각 폴더의 `newV`는 `oldV`를 고친 버전입니다. 그 안에는 세 가지가 섞여 있습니다.
+각 폴더의 `newV`는 `oldV`를 바꾼 버전이고, 일부 입력에서 old와 다르게 동작합니다. 참가자의 목표는 **모든 입력에서 old와 같은 결과를 내도록 `newV`를 고치는 것**입니다. 의도된 변경이나 제약은 없고, old가 곧 기준입니다.
 
-- **의도된 동작 변경:** 결과가 old와 달라지는 것이 맞는 변경입니다. 반드시 남아야 합니다.
-- **리팩터링:** 동작은 그대로 두고 코드 모양을 바꾼 것입니다. 남겨야 합니다.
-- **의도하지 않은 regression:** 위 두 가지에 섞여 들어간 실수입니다. 없애야 합니다.
+| task | new에서 old와 달라진 점 | 참고 수정 (`fixedV`) |
+|---|---|---|
+| `Tutorial1` (T1, 시각화) | `else`에서 `b` 대신 `a`, 결과를 0 미만이 되지 않게 자름 | `r = b`, 자르는 `if` 삭제 |
+| `Tutorial2` (T2, 줄 diff만) | `else`에서 `b` 대신 `a`, 결과를 50 이하로 자름 | `r = b`, 자르는 `if` 삭제 |
+| `DigitSum` | `while (abs(m) > 10)`, 루프 뒤 `sum = sum + m;` (10·100 경계, 음수 처리) | `while (m > 0)`, 루프 뒤 줄 삭제 |
+| `MemberDiscount` | 회원 할인에 `total >= 100` 조건, 할인을 합계에서 한 번에 내림 | `member == 1`만, 단가에서 할인마다 내림 |
+| `OvertimeRate` | 할증을 `over * rate / 2`로 한 번에 내림, 휴일 2배 | `over * (rate * 3 / 2 - rate)`, 휴일 `if` 삭제 |
+| `Shipping` | express +7, 무료배송 기준 `total > 80` | `fee = base + extra;`, `total >= 100` |
 
-목표 동작은 `specV`(old에 의도된 변경만 넣은 버전)입니다. 고친 코드는 spec과 같아야 하므로, 전체를 old로 되돌리면 의도된 변경을 잃어서 오답이고, 바뀐 줄만 되돌려도 다른 변경과 얽혀 있어서 대부분 오답입니다.
+검증 (old와 비교, 넓은 범위 전수 실행 / ARDiff-lite):
 
-| task | 의도된 변경 (남김) | 제약 | regression | 참고 수정 (`fixedV`) |
-|---|---|---|---|---|
-| `Shipping` | 무료배송 기준 100 → 80, express(`express == 1`)는 무료여도 +7 | `fee = base + extra + rush;`, weight·express `if` 그대로 | `total > 80` (80은 무료가 아님), 무료 처리가 express 요금까지 0으로 만듦 | `total >= 80`, 무료일 때 `fee = rush;` (3토큰) |
-| `OvertimeRate` | 휴일(`holiday == 1`)은 모든 시간을 시급의 2배로, 초과근무 할증 없음 | 휴일 `if` 그대로 | 할증 `over * rate / 2`를 한 번에 내림(old는 시간마다), 휴일에도 할증이 붙어 2배가 됨 | `hours * rate + (holiday == 1 ? 0 : over * (rate * 3 / 2 - rate))` (15토큰) |
-| `MemberDiscount` | 회원 5% 할인은 주문 합계(`price * qty`) 100 이상일 때만 | 두 `if` 문 그대로 | `total * pct / 100`: 할인을 합계에서 한 번에 내림 (old는 단가에서 할인마다 내림) | 마지막 줄만: 단가에서 할인마다 내림 (26토큰) |
-| `DigitSum` | 음수는 절댓값의 자릿수 합 | 루프 본문, `m = n;` 그대로, `while`은 10과 비교 | `while (abs(m) > 10)`: 10, 100~109 … 에서 틀림, 음수면 마지막 자리를 부호째 더함 | `abs(m) >= 10`, 루프 뒤 `abs(m)` (4토큰) |
-
-검증 (spec과 비교, 넓은 범위 전수 실행 / ARDiff-lite):
-
-| task | old | new (주어진 것) | fixed |
-|---|---|---|---|
-| `Shipping` | 17051/41553 다름 · NOT EQUIVALENT (의도된 변경) | 5913/41553 다름 · NOT EQUIVALENT | 0 다름 · EQUIVALENT |
-| `OvertimeRate` | 3600/11193 다름 · NOT EQUIVALENT | 3158/11193 다름 · NOT EQUIVALENT | 0 다름 · EQUIVALENT |
-| `MemberDiscount` | 773/12558 다름 · NOT EQUIVALENT | 7887/12558 다름 · NOT EQUIVALENT | 0 다름 · EQUIVALENT |
-| `DigitSum` | 2000/4001 다름 · NOT EQUIVALENT | 2111/4001 다름 · NOT EQUIVALENT | 0 다름 · ARDiff-lite 판정 불가(테스트로 판단) |
+| task | new (주어진 것) | fixed |
+|---|---|---|
+| `Tutorial1` | 36060/58081 다름 · NOT EQUIVALENT | 0 다름 · EQUIVALENT |
+| `Tutorial2` | 31335/58081 다름 · NOT EQUIVALENT | 0 다름 · EQUIVALENT |
+| `DigitSum` | 2039/4001 다름 · NOT EQUIVALENT | 0 다름 · EQUIVALENT |
+| `MemberDiscount` | 8381/12558 다름 · NOT EQUIVALENT | 0 다름 · ARDiff-lite 판정 불가(테스트로 판단) |
+| `OvertimeRate` | 5160/11193 다름 · NOT EQUIVALENT | 0 다름 · EQUIVALENT |
+| `Shipping` | 12798/41553 다름 · NOT EQUIVALENT | 0 다름 · EQUIVALENT |
 
 ## 과제 페이지 (`eval.html`)
 
-사이트의 `eval.html`에서 과제를 바로 풀 수 있습니다. old는 고정(읽기 전용)이고 new를 고치면 오른쪽 체크리스트가 실시간으로 바뀝니다.
+사이트의 `eval.html`에서 과제를 바로 풀 수 있습니다. old는 고정(읽기 전용)이고 new를 고치면 체크리스트가 실시간으로 바뀝니다.
 
-- **behaviour:** spec과 old 양쪽 상수로 만든 테스트 입력에서
-  - spec이 old와 다른 입력에서는 spec을 따르는지 (의도된 변경이 남아 있는지)
-  - 그 밖의 입력에서는 old와 같은지 (regression이 없는지)
-  - ARDiff-lite가 spec과 EQUIVALENT라고 하는지
-- **keep:** 각 폴더 `task.json`의 `keep` 항목. `contains`/`absent`는 주석을 뺀 코드에 정규식이 있는지/없는지입니다.
-- **edit size:** 주어진 new에서 바뀐 토큰 수와 참고 수정의 토큰 수.
-- 페이지에는 spec이 base64로 들어가 있고(체크용), `fixedV`는 들어가지 않습니다(토큰 수만).
-- 모두 통과하면 `solved`가 뜹니다. 고친 코드는 브라우저에 과제별로 저장되고, `reset`으로 처음 new로 돌아갑니다.
-- 처음 접속하면 시작 페이지(과제 안내)가 나오고, Start를 누르면 과제가 열립니다.
-- 과제 **순서**도 브라우저마다 무작위로 정해지고 유지됩니다(메뉴에 번호로 표시, 결과에도 제시 순서대로 기록).
-- 브라우저마다 과제의 절반(2개)은 **시각화**, 나머지 절반은 **raw output**(에디터에 표시한 줄 diff, ARDiff-lite z3 로그(old vs new, spec vs new), spec 결과까지 적은 테스트 실행 목록)으로 무작위 배정되고, 그 배정이 유지됩니다. 헤더의 visual / raw 전환은 숨겨집니다.
-- 헤더의 **restart**: 새 참가자용. 한 번 더 눌러 확인하면 배정을 새로 뽑고 저장된 수정을 모두 지운 뒤 시작 페이지로 돌아갑니다.
-- 과제마다 배정된 화면, 활동 시간(그 과제가 화면에 있고 탭이 보이는 동안), 처음 solved가 된 활동 시간, 수정 횟수, 마지막 solved 여부, 마지막 코드를 기록합니다. 헤더의 **finish**를 누르면 결과 표가 나오고, **Submit as a GitHub issue**로 이 저장소에 `[eval] results <참가자 ID> <시각>` 제목의 **공개** 이슈가 미리 채워진 채 열립니다(참가자는 GitHub에 로그인해서 Submit만 누름). 링크가 너무 길면 코드는 클립보드로 복사해서 붙여 넣게 합니다. **download JSON**은 같은 내용(참가자 ID, 제출 시각, 제시 순서, 과제별 위치·화면·활동 시간(ms)·solved 시각(ms)·수정 횟수·solved 여부·마지막 코드)을 JSON 파일로 저장합니다.
-- 헤더의 **EN / 한국어**로 화면 언어를 바꿀 수 있고 선택이 유지됩니다(`?lang=ko` / `?lang=en`으로 지정 가능). 과제 설명과 제약 문구는 `task.json`의 `title_ko`, `goal_ko`, `desc_ko`를 씁니다. 코드와 raw output은 번역하지 않고, 이슈와 JSON은 영어로 남기되 사용한 언어(`Language` / `lang`)를 기록합니다.
-- **튜토리얼 2개**(`Tutorial1/`, `Tutorial2/`, `task.json`의 `"tutorial": true`와 `"view"`): 항상 맨 앞에 T1, T2로 나오고, 무작위 순서·배정에서 빠집니다. 비슷한 문제를 **T1은 시각화로, T2는 raw output으로** 풀어 보게 합니다(T1: 큰 값, 결과가 0 미만이 되지 않음 / T2: 작은 값, 결과가 50을 넘지 않음; 둘 다 `else`에서 `b` 대신 `a`를 쓰는 복사 실수, 참고 수정 1토큰). 결과에는 `tutorial: true`, 위치 0으로 기록됩니다.
-- **설문**(`survey.json`): Start 뒤 과제 전 설문, finish 뒤 과제 후 설문이 나옵니다. 질문 형식은 `number`, `choice`(`options` / `options_ko`), `scale`(1–5, `low` / `high`), `text`이고, 답은 이슈와 JSON(`survey.pre`, `survey.post`)에 들어갑니다. 질문은 파일만 고치면 바뀝니다. 답하지 않아도 넘어갈 수 있습니다.
-- 과제가 5개가 되면서 이슈 링크에 코드까지 넣기에는 길어서, 보통은 코드를 클립보드로 복사해 붙여 넣는 방식이 됩니다(JSON에는 항상 코드가 들어갑니다).
-- `eval.html?viz=1` / `?viz=0`은 모든 과제를 시각화 / raw output으로 고정합니다. `eval.html#Shipping`처럼 과제를 바로 열 수 있습니다.
+- **흐름:** 시작 페이지 → 과제 전 설문 → 튜토리얼 T1(시각화), T2(줄 diff만) → 과제 1~4 → finish → 과제 후 설문 → 결과(이슈 제출 / JSON 다운로드)
+- **체크리스트:** old와 new의 상수로 만든 테스트 입력에서 old와 같은 결과인지, ARDiff-lite가 old와 EQUIVALENT라고 하는지(판정 못 하면 "–", 테스트로 판단). 모두 통과하면 `solved`.
+- **edit size:** 주어진 new에서 바뀐 토큰 수와 참고 수정의 토큰 수. 페이지에는 `fixedV` 자체는 들어가지 않습니다(토큰 수만).
+- 과제 **순서**와 **화면**(과제 1~4 중 2개는 시각화, 2개는 줄 diff만)은 브라우저마다 무작위로 정해지고 유지됩니다. 튜토리얼은 항상 맨 앞이고 각자 `task.json`의 `"view"`를 따릅니다.
+- **시각화 없는 화면:** 에디터에 표시한 줄 diff(old의 삭제·변경 줄은 빨강, new의 추가·변경 줄은 초록)만 보입니다. ARDiff-lite는 체크리스트 판정용으로 보이지 않게 돌아갑니다.
+- 고친 코드는 과제별로 브라우저에 저장되고, `reset`으로 처음 new로 돌아갑니다.
+- 헤더의 **restart**: 새 참가자용. 한 번 더 눌러 확인하면 순서·배정을 새로 뽑고 저장된 수정·측정·설문을 모두 지운 뒤 시작 페이지로 돌아갑니다.
+- **측정:** 과제마다 화면, 활동 시간(그 과제가 화면에 있고 탭이 보이는 동안), 처음 solved가 된 활동 시간, 수정 횟수, 마지막 solved 여부, 마지막 코드. **finish** 후 결과 표에서 **Submit as a GitHub issue**(이 저장소에 `[eval] results <참가자 ID> <시각>` 제목의 **공개** 이슈가 미리 채워진 채 열림; 링크가 길면 코드는 클립보드로 복사해 붙여 넣음) 또는 **download JSON**.
+- **설문**(`survey.json`): 질문 형식은 `number`, `choice`(`options` / `options_ko`), `scale`(1–5, `low` / `high`), `text`. 답은 이슈와 JSON(`survey.pre`, `survey.post`)에 들어갑니다. 답하지 않아도 넘어갈 수 있습니다.
+- **언어:** 헤더의 **EN / 한국어**(또는 `?lang=ko` / `?lang=en`). 과제 설명은 `task.json`의 `title_ko`, `goal_ko`. 코드와 raw output은 번역하지 않고, 이슈와 JSON은 영어로 남기되 사용한 언어를 기록합니다.
+- `eval.html?viz=1` / `?viz=0`은 과제 1~4를 모두 시각화 / 줄 diff만으로 고정합니다. `eval.html#Shipping`처럼 과제를 바로 열 수 있습니다.
+- 과제에 `specV.java`(old에 의도된 변경을 넣은 버전)를 두면 old 대신 그 spec이 기준이 되고, `task.json`의 `keep`에 제약 검사를 넣을 수 있습니다. 지금 과제들은 쓰지 않습니다.
 
 ## 참가자에게 주는 지시
 
-> 과제 설명에 적힌 의도된 변경과 리팩터링은 남기고, 그 밖의 동작은 old와 같아지도록 `newV`를 최소한으로 고치세요.
-> 리팩터링의 일부가 old와 같은 동작을 낼 수 없다면 그 부분만 바꾸세요.
+> 새 버전을 고쳐서, 모든 입력에서 기존 버전과 똑같은 결과를 내게 하세요. 기존 버전을 그대로 복사해 넣지 말고, 새 버전을 최소한으로 고치세요.
 
 ## 채점
 
-1. **동작:** spec과 같아야 합니다(테스트, ARDiff-lite).
-2. **유지:** `task.json`의 keep 항목을 모두 만족해야 합니다.
-3. **크기:** 참고 수정과 비교한 바뀐 토큰 수.
-4. **(선택) 근거:** 어떤 입력에서 무엇이 잘못됐는지(반례) 답하게 하면, 시각화가 regression과 의도된 변경을 구분하는 데 도움이 됐는지 볼 수 있습니다.
+1. **동작:** old와 같아야 합니다(테스트, ARDiff-lite).
+2. **크기:** 참고 수정과 비교한 바뀐 토큰 수.
+3. **시간:** 처음 solved가 된 활동 시간.

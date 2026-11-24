@@ -1,7 +1,4 @@
 public class newV {
-    // after: the member discount now requires an order total of at least 100.
-    // constraints:
-    //   1. do not change either of the two if statements
     public static double snippet(int price, int qty, int member) {
         int total = 0;
         int pct = 0;

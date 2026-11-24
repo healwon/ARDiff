@@ -59,8 +59,8 @@
   {
    "id": "viz_help",
    "type": "scale",
-   "text": "In the tasks WITH the visualization, how much did it help you find and fix the regression?",
-   "text_ko": "시각화가 있었던 과제에서, 시각화가 회귀를 찾고 고치는 데 얼마나 도움이 되었나요?",
+   "text": "In the tasks WITH the visualization, how much did it help you find and fix the problem?",
+   "text_ko": "시각화가 있었던 과제에서, 시각화가 문제를 찾고 고치는 데 얼마나 도움이 되었나요?",
    "low": "not at all",
    "high": "very much",
    "low_ko": "전혀",
@@ -69,8 +69,8 @@
   {
    "id": "raw_help",
    "type": "scale",
-   "text": "In the tasks with the RAW OUTPUT, how much did it help you find and fix the regression?",
-   "text_ko": "raw output이 나왔던 과제에서, raw output이 회귀를 찾고 고치는 데 얼마나 도움이 되었나요?",
+   "text": "In the tasks with ONLY THE LINE DIFF, how much did it help you find and fix the problem?",
+   "text_ko": "줄 diff만 나왔던 과제에서, 줄 diff가 문제를 찾고 고치는 데 얼마나 도움이 되었나요?",
    "low": "not at all",
    "high": "very much",
    "low_ko": "전혀",
@@ -83,12 +83,12 @@
    "text_ko": "어느 화면이 더 도움이 되었나요?",
    "options": [
     "the visualization",
-    "the raw output",
+    "the line diff only",
     "no difference"
    ],
    "options_ko": [
     "시각화",
-    "raw output",
+    "줄 diff만",
     "차이 없음"
    ]
   },

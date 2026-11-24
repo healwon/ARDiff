@@ -1,5 +1,5 @@
 public class fixedV {
-    // reference fix: round each discount per unit price, as before; pct only says which discounts apply
+    // reference fix: every member gets the 5%, and each discount is taken from the unit price as before
     public static double snippet(int price, int qty, int member) {
         int total = 0;
         int pct = 0;
@@ -7,10 +7,10 @@ public class fixedV {
         if (qty >= 10) {
             pct = pct + 10;
         }
-        if (member == 1 && total >= 100) {
+        if (member == 1) {
             pct = pct + 5;
         }
-        total = (price - price * (pct / 10) / 10 - price * (pct % 10 / 5) / 20) * qty;
+        total = total - (price * (pct / 10) / 10 + price * (pct % 10 / 5) / 20) * qty;
         return total;
     }
 }

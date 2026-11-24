@@ -112,7 +112,7 @@ body.finished .main,body.finished .top .tnav,body.finished .top select,body.fini
 .start input{font:inherit;padding:4px 8px;border:1px solid var(--rule);border-radius:4px;background:var(--panel);color:var(--fg)}
 .start .acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.start .acts button{font:inherit;padding:6px 14px;border-radius:6px;border:1px solid var(--rule);background:var(--panel);color:var(--fg);cursor:pointer}
 .start .acts .primary{font-weight:600;border-color:var(--flow);background:var(--flowsoft)}
-body.evalpage .top .note,body.evalpage .top .mode:not(.lang),body.starting .main,body.starting #finishbtn,body.starting .top .tnav,body.starting .top select,body.starting .top label{display:none}
+body.evalpage.rawmode #lite,body.evalpage.rawmode #rawtests,body.evalpage .top .note,body.evalpage .top .mode:not(.lang),body.starting .main,body.starting #finishbtn,body.starting .top .tnav,body.starting .top select,body.starting .top label{display:none}
 .task{border:1px solid var(--rule);border-radius:8px;background:var(--panel);padding:10px 12px;display:grid;gap:5px;font-size:13px}
 .task .th{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.task .th b{font-size:14px}
 .task .th button{margin-left:auto;font:inherit;font-size:12px;padding:2px 9px;border:1px solid var(--rule);border-radius:4px;background:none;color:var(--fg);cursor:pointer}
@@ -137,18 +137,11 @@ body.evalpage .top .note,body.evalpage .top .mode:not(.lang),body.starting .main
 <div class="start" id="survey" hidden></div>
 <div class="start" id="start" hidden>
   <h2>Regression repair tasks</h2>
-  <p>You will fix <b class="ntasks">4</b> small Java methods, one task at a time. In every task the <b>new version</b> changes the
-    <b>old version</b> on purpose, but the change also brought in one or more mistakes (regressions).</p>
-  <p>Edit the new version so that</p>
-  <ul>
-    <li>the <b>intended change</b> described in the task is still there,</li>
-    <li>everything else behaves <b>exactly as the old version</b>, and</li>
-    <li>the listed <b>constraints</b> are respected (they say which lines you may not change).</li>
-  </ul>
-  <p>The old version cannot be edited. The checklist above the code tells you, as you type, whether the behaviour is right and the
-    constraints hold; a task is done when it says <span class="chip eq">solved</span>. Some tasks show a visualization of how the
-    two versions differ; the others show the raw output instead (a line diff, the solver log of the equivalence checker, and the
-    results of running both versions on test inputs).</p>
+  <p>You will fix <b class="ntasks">4</b> small Java methods, one task at a time. In every task, the <b>new version</b> was changed from the
+    <b>old version</b> and now behaves differently for some inputs.</p>
+  <p class="goalp">Edit the new version so that it returns <b>exactly the same result as the old version for every input</b>.
+    <b>Do not copy the old version over the new one</b>: change the new version as little as possible. The old version cannot be edited. The checklist above the code tells you, as you type, whether the two versions behave the same; a task is done when it
+    says <span class="chip eq">solved</span>. Some tasks show a visualization of how the two versions differ; the others show only the line diff, marked in the code.</p>
   <p>Use <b>prev</b> / <b>next</b> to move between tasks. Your edits are kept in this browser, so you can come back to a task.
     The time you spend on each task is measured. When you are done, press <b>finish</b> (top right) to see your results and submit them.</p>
   <button type="button" id="startbtn">Start</button>
@@ -220,15 +213,21 @@ var KO = {
   "unintended difference on {0} of {1} inputs, e.g. {2}: should stay {3}, is {4}": "의도하지 않은 차이: 입력 {1}개 중 {0}개. 예: {2} → {3}으로 유지돼야 함, 지금은 {4}",
   "ARDiff-lite unavailable here (it runs on the GitHub Pages version)": "여기서는 ARDiff-lite를 쓸 수 없음 (GitHub Pages 버전에서 동작)",
   "ARDiff-lite against the spec: checking…": "ARDiff-lite spec 비교: 확인 중…",
+  "ARDiff-lite against the old version: checking…": "ARDiff-lite 기존 버전 비교: 확인 중…",
+  "ARDiff-lite could not decide against the old version ({0}); the tests decide": "ARDiff-lite가 기존 버전과 비교해 판정하지 못함 ({0}); 테스트 결과로 판단",
+  "ARDiff-lite: equivalent to the old version": "ARDiff-lite: 기존 버전과 동치", "ARDiff-lite against the old version: {0}": "ARDiff-lite 기존 버전 비교: {0}",
+  "same result as the old version on all {0} tested inputs": "테스트 입력 {0}개 모두에서 기존 버전과 같은 결과",
+  "differs from the old version on {0} of {1} inputs, e.g. {2}: should be {3}, is {4}": "기존 버전과 다름: 입력 {1}개 중 {0}개. 예: {2} → {3}이어야 함, 지금은 {4}",
   "ARDiff-lite could not decide against the spec ({0}); the tests decide": "ARDiff-lite가 spec과 비교해 판정하지 못함 ({0}); 테스트 결과로 판단",
   "ARDiff-lite: equivalent to the spec": "ARDiff-lite: spec과 동치",
   "ARDiff-lite against the spec: {0}": "ARDiff-lite spec 비교: {0}", " — e.g. {0}: should be {1}, is {2}": " — 예: {0} → {1}이어야 함, 지금은 {2}",
   "solved": "해결", "reset to the given new version": "처음 주어진 새 버전으로 되돌리기", "behaviour": "동작", "keep": "유지",
   "edit size: {0} tokens changed from the given new version (reference fix: {1})": "수정 크기: 주어진 새 버전에서 {0}토큰 변경 (참고 수정: {1})",
   "Regression Repair Tasks": "회귀 수정 과제", "task": "과제", "fix the new version: remove the regression, keep the listed changes": "새 버전을 고치세요: 회귀는 없애고, 지정된 변경은 남기세요",
+  "fix the new version so that it behaves like the old one": "새 버전이 기존 버전처럼 동작하도록 고치세요",
   "old version (fixed)": "기존 버전 (수정 불가)", "new version (edit this)": "새 버전 (여기를 수정)", "◀ prev": "◀ 이전", "next ▶": "다음 ▶",
   "finish": "완료", "restart": "처음부터", "click again to restart": "한 번 더 누르면 처음부터", "see and submit your results": "결과를 보고 제출", "start over for a new participant": "새 참가자를 위해 처음부터",
-  "visualization": "시각화", "raw output": "raw output", "yes": "예", "no": "아니요",
+  "visualization": "시각화", "raw output": "raw output", "line diff": "줄 diff", "yes": "예", "no": "아니요",
   "Results": "결과", "participant ID": "참가자 ID", "active time": "활동 시간", "solved at": "해결 시점", "edits": "수정 횟수", "view": "화면",
   "Submit as a GitHub issue": "GitHub 이슈로 제출", "download JSON": "JSON 다운로드", "back to the tasks": "과제로 돌아가기",
   "RESULTS_INTRO": "수고하셨습니다! 과제별 결과입니다. 받은 참가자 ID가 있으면 입력한 뒤, GitHub 이슈로 제출하거나 JSON 파일로 저장하세요. <b>이슈는 공개됩니다.</b> GitHub에 로그인되어 있어야 하며, 새 탭에 내용이 모두 채워진 이슈 페이지가 열리면 <b>Submit new issue</b>만 누르면 됩니다.",
@@ -240,23 +239,21 @@ var KO = {
   "Before the tasks": "과제 전 설문", "After the tasks": "과제 후 설문", "A few questions about you first.": "먼저 몇 가지 질문에 답해 주세요.",
   "A few questions about the tasks you just did.": "방금 한 과제에 대해 몇 가지 질문에 답해 주세요.", "Continue": "계속",
   "TUT_NOTE_VIZ": "튜토리얼: 이 과제는 old와 new의 차이를 보여주는 <b>시각화</b> 화면입니다. 실제 과제 중 일부가 이렇게 나옵니다.",
-  "TUT_NOTE_RAW": "튜토리얼: 이 과제는 대신 <b>raw output</b>(코드에 표시된 줄 diff, 아래의 solver 로그와 테스트 실행 결과)을 보여줍니다. 나머지 실제 과제가 이렇게 나옵니다.",
-  "TUTORIAL_NOTE": "<b>T1</b>, <b>T2</b>로 표시된 처음 두 과제는 같은 종류의 짧은 튜토리얼로, 하나는 시각화, 하나는 raw output으로 풀어 봅니다. 결과에 포함되지 않습니다.",
+  "TUT_NOTE_RAW": "튜토리얼: 이 과제는 시각화 없이 코드에 표시된 <b>줄 diff</b>만 보여줍니다. 나머지 실제 과제가 이렇게 나옵니다.",
+  "TUTORIAL_NOTE": "<b>T1</b>, <b>T2</b>로 표시된 처음 두 과제는 같은 종류의 짧은 튜토리얼로, 하나는 시각화, 하나는 줄 diff만으로 풀어 봅니다. 결과에 포함되지 않습니다.",
   "SURVEY_NOTE": "과제 전과 후에 짧은 설문이 있습니다.",
   "edit either version — the analysis on the right updates as you type": "어느 버전이든 고치면 오른쪽 분석이 바로 바뀌어요", "old version": "기존 버전", "new version": "새 버전", "example": "예시"
 };
 var KO_START = '<h2>회귀 수정 과제</h2>' +
-  '<p>작은 Java 메서드 <b class="ntasks">4</b>개를 한 과제씩 고칩니다. 각 과제의 <b>새 버전</b>은 <b>기존 버전</b>을 일부러 바꾼 것이지만, 그 과정에서 하나 이상의 실수(회귀)가 함께 들어왔습니다.</p>' +
-  '<p>새 버전을 다음과 같이 고치세요.</p><ul><li>과제에 적힌 <b>의도된 변경</b>은 그대로 남기고,</li><li>그 밖의 동작은 <b>기존 버전과 똑같이</b> 하며,</li>' +
-  '<li>적힌 <b>제약</b>(고치면 안 되는 줄)을 지키세요.</li></ul>' +
-  '<p>기존 버전은 고칠 수 없습니다. 위쪽 체크리스트가 입력하는 대로 동작이 맞는지, 제약을 지켰는지 알려 주고, <span class="chip eq">해결</span>이 뜨면 그 과제는 끝입니다. ' +
-  '어떤 과제는 두 버전의 차이를 보여주는 시각화가, 나머지 과제는 대신 raw output(줄 diff, 동치 검사기의 solver 로그, 테스트 입력으로 두 버전을 실행한 결과)이 나옵니다.</p>' +
+  '<p>작은 Java 메서드 <b class="ntasks">4</b>개를 한 과제씩 고칩니다. 각 과제의 <b>새 버전</b>은 <b>기존 버전</b>에서 바뀌어, 일부 입력에서 다르게 동작합니다.</p>' +
+  '<p class="goalp">새 버전을 고쳐서 <b>모든 입력에서 기존 버전과 똑같은 결과</b>를 내게 하세요. <b>기존 버전을 그대로 복사해 넣지 말고</b>, 새 버전을 최소한으로 고치세요. 기존 버전은 고칠 수 없습니다. 위쪽 체크리스트가 입력하는 대로 두 버전이 같게 동작하는지 알려 주고, ' +
+  '<span class="chip eq">해결</span>이 뜨면 그 과제는 끝입니다. 어떤 과제는 두 버전의 차이를 보여주는 시각화가, 나머지 과제는 코드에 표시된 줄 diff만 나옵니다.</p>' +
   '<p><b>이전</b> / <b>다음</b>으로 과제를 옮겨 다닐 수 있고, 고친 코드는 이 브라우저에 남아 다시 돌아와도 이어서 할 수 있습니다. 과제마다 걸린 시간을 측정합니다. ' +
   '다 마치면 오른쪽 위 <b>완료</b>를 눌러 결과를 확인하고 제출하세요.</p><button type="button" id="startbtn">시작</button>';
 // English text in, the current language out; {0}, {1}, … are filled with the remaining arguments
 var EN = {"TUT_NOTE_VIZ": "Tutorial: this task shows the <b>visualization</b> of how old and new differ. Some of the real tasks look like this.",
-          "TUT_NOTE_RAW": "Tutorial: this task shows the <b>raw output</b> instead (the line diff in the code, the solver log and the test runs below). The other real tasks look like this.",
-          "TUTORIAL_NOTE": "The first two tasks, marked <b>T1</b> and <b>T2</b>, are short tutorials of the same kind: one with the visualization and one with the raw output. They are not counted.",
+          "TUT_NOTE_RAW": "Tutorial: this task shows no visualization, only the <b>line diff</b> marked in the code. The other real tasks look like this.",
+          "TUTORIAL_NOTE": "The first two tasks, marked <b>T1</b> and <b>T2</b>, are short tutorials of the same kind: one with the visualization and one with only the line diff. They are not counted.",
           "SURVEY_NOTE": "There are a few short questions before the tasks and after them."};
 function tr(en) {
   var s = LANG === "ko" && KO[en] !== undefined ? KO[en] : EN[en] !== undefined ? EN[en] : en;
@@ -336,6 +333,10 @@ function taskSpec() {
   var t = EVAL && curEx !== null && EVAL[EX[curEx].name];
   return t && t.spec ? decodeURIComponent(escape(atob(t.spec))) : null;
 }
+// what the edit is checked against: the spec when the task has one, otherwise the old version itself
+function refSource() { return taskSpec() || EX[curEx].old; }
+// a checklist text about the spec, worded for the old version when there is no spec
+function trRef(en) { var a = [].slice.call(arguments); if (!taskSpec()) a[0] = en.replace(/the spec/g, "the old version"); return tr.apply(null, a); }
 // the edit against the spec on a fixed set of inputs per task: boundary and random values from the constants of old,
 // spec and the given new, plus inputs where spec and old differ (so the intended change is always exercised) and
 // ARDiff-lite's counterexample. Where the spec differs from old the result must follow the spec (the intended
@@ -344,8 +345,8 @@ var taskIn = {};
 function taskInputs() {
   var ex = EX[curEx];
   if (taskIn[ex.name]) return taskIn[ex.name];
-  var mo = Engine.parseMethod(ex.old), ms = Engine.parseMethod(taskSpec()), consts = [];
-  (Engine.stripComments(ex.old) + "\n" + Engine.stripComments(taskSpec()) + "\n" + Engine.stripComments(ex.new)).replace(/\b\d+\b(?!\.)/g, function (m) { if (consts.indexOf(+m) < 0) consts.push(+m); return m; });
+  var mo = Engine.parseMethod(ex.old), ms = Engine.parseMethod(refSource()), consts = [];
+  (Engine.stripComments(ex.old) + "\n" + Engine.stripComments(refSource()) + "\n" + Engine.stripComments(ex.new)).replace(/\b\d+\b(?!\.)/g, function (m) { if (consts.indexOf(+m) < 0) consts.push(+m); return m; });
   var base = Engine.inputSet(mo.params, 2500, consts), pool = Engine.inputSet(mo.params, 30000, consts).slice(base.length), more = [];
   for (var i = 0; i < pool.length && more.length < 300; i++) { try { if (Engine.run(mo, pool[i]).value !== Engine.run(ms, pool[i]).value) more.push(pool[i]); } catch (e) { } }
   return taskIn[ex.name] = {inputs: base.concat(more), old: mo, spec: ms};
@@ -374,6 +375,11 @@ function renderTask() {
   var src = cmNew.getValue(), clean = Engine.stripComments(src), runs = res && !res.error && !res.unsupported, items = [];
   var sc = runs ? specCheck(src) : {error: (res && (res.error || res.unsupported)) || "does not run"};
   if (sc.error) items.push({ok: false, txt: tr("does not run: {0}", sc.error)});
+  else if (!taskSpec()) {
+    items.push({ok: sc.otherOk === sc.other, txt: sc.otherOk === sc.other ?
+      tr("same result as the old version on all {0} tested inputs", sc.other) :
+      tr("differs from the old version on {0} of {1} inputs, e.g. {2}: should be {3}, is {4}", sc.other - sc.otherOk, sc.other, inputText(sc.regEx.inp), sc.regEx.want, sc.regEx.got)});
+  }
   else {
     items.push({ok: sc.intendedOk === sc.intended, txt: sc.intendedOk === sc.intended ?
       tr("intended change in place: follows the spec on all {0} tested inputs where it should differ from old", sc.intended) :
@@ -385,9 +391,9 @@ function renderTask() {
   // ARDiff-lite only fails the task when it finds a real difference; when it cannot decide, the tests decide
   var lv = lite.error ? null : lite.spec ? lite.spec.verdict : undefined;
   items.push({ok: lv === null || lv === "UNKNOWN" ? "na" : lv === undefined ? "wait" : lv === "EQUIVALENT",
-    txt: lv === null ? tr("ARDiff-lite unavailable here (it runs on the GitHub Pages version)") : lv === undefined ? tr("ARDiff-lite against the spec: checking…") :
-         lv === "UNKNOWN" ? tr("ARDiff-lite could not decide against the spec ({0}); the tests decide", lite.spec.reason || "unknown") :
-         lv === "EQUIVALENT" ? tr("ARDiff-lite: equivalent to the spec") : tr("ARDiff-lite against the spec: {0}", lv) +
+    txt: lv === null ? tr("ARDiff-lite unavailable here (it runs on the GitHub Pages version)") : lv === undefined ? trRef("ARDiff-lite against the spec: checking…") :
+         lv === "UNKNOWN" ? trRef("ARDiff-lite could not decide against the spec ({0}); the tests decide", lite.spec.reason || "unknown") :
+         lv === "EQUIVALENT" ? trRef("ARDiff-lite: equivalent to the spec") : trRef("ARDiff-lite against the spec: {0}", lv) +
          (lite.spec.counterexample ? tr(" — e.g. {0}: should be {1}, is {2}", inputText(lite.spec.counterexample.inputs), lite.spec.counterexample.old, lite.spec.counterexample.new) : "")});
   var keep = t.keep.map(function (k) {
     var ok = k.type === "contains" ? new RegExp(k.re).test(clean) : k.type === "absent" ? !new RegExp(k.re).test(clean) : k.type === "steps" ? runs && stepsOk(ex) : false;
@@ -479,6 +485,7 @@ function runLite(o, n) {
         if (my !== lite.token) return;
         lite.result = r; renderLite();
         // the task page also asks whether the edit matches the spec (old plus only the intended change)
+        if (EVAL && !taskSpec()) { lite.spec = r; renderSpecCex(); renderTask(); return; }
         if (EVAL && taskSpec()) return ArdiffLite.analyze(taskSpec(), n, ev).then(function (q) { if (my === lite.token) { lite.spec = q; renderSpecCex(); renderTask(); var rp = document.querySelector(".lite pre.raw"); if (rp && showRaw()) rp.textContent = rawLog(); } });
       });
     }).catch(function (e) { if (my === lite.token) { lite.error = e.message || String(e); renderLite(); } });
@@ -489,7 +496,7 @@ function rawLog() {
   var r = lite.result; if (!r) return "";
   var log = liteLog(r, "old", "new");
   // task page: also the query against the spec (what the checklist uses)
-  if (EVAL && lite.spec) log += "\n; ================ ARDiff-lite: spec vs new ================\n" + liteLog(lite.spec, "spec", "new");
+  if (EVAL && taskSpec() && lite.spec) log += "\n; ================ ARDiff-lite: spec vs new ================\n" + liteLog(lite.spec, "spec", "new");
   return log;
 }
 function liteLog(r, a, b) {
@@ -866,7 +873,7 @@ function draw() {
   });
 }
 
-// task page: which tasks show the visualization (the others show the raw output). Each browser draws once, at random,
+// task page: which tasks show the visualization (the others show only the line diff). Each browser draws once, at random,
 // half of the tasks with it and half without, and keeps that; ?viz=1 / ?viz=0 force one way for every task
 function vizPlan() {
   var key = "eval:vizplan", plan = null, names = EX.filter(function (e) { return !isTut(e.name); }).map(function (e) { return e.name; });
@@ -887,7 +894,7 @@ function mlog() { try { return JSON.parse(localStorage.getItem("eval:log") || "{
 function msave(L) { try { localStorage.setItem("eval:log", JSON.stringify(L)); } catch (e) { } }
 function mtask(L, name) {
   L.tasks = L.tasks || {};
-  return L.tasks[name] = L.tasks[name] || {view: vizFor(name) ? "visualization" : "raw output", ms: 0, solvedMs: null, edits: 0, solved: false};
+  return L.tasks[name] = L.tasks[name] || {view: vizFor(name) ? "visualization" : "line diff", ms: 0, solvedMs: null, edits: 0, solved: false};
 }
 function mtick() {
   var now = Date.now(), counting = meas.cur !== null && meas.since !== null && meas.vis &&
@@ -1003,7 +1010,7 @@ function showFinish() {
 }
 
 function vizFor(name) {
-  if (isTut(name)) return EVAL[name].view === "raw output" ? 0 : 1;
+  if (isTut(name)) return EVAL[name].view === "line diff" || EVAL[name].view === "raw output" ? 0 : 1;
   var m = /[?&]viz=([01])\b/.exec(location.search);
   return m ? +m[1] : vizPlan()[name];
 }
@@ -1014,7 +1021,7 @@ function load(i) {
     mtick(); meas.cur = ex.name; meas.since = Date.now();
     var L0 = mlog(); mtask(L0, ex.name); msave(L0);
     try { saved = localStorage.getItem("eval:" + ex.name); } catch (e) { }
-    // the assigned condition: the visualization, or the raw output (line diff, ARDiff-lite's z3 log, test runs)
+    // the assigned condition: the visualization, or only the line diff (in the editors)
     rawMode = !vizFor(ex.name); document.body.classList.toggle("rawmode", rawMode);
     $("ex").value = i;
     var pv = $("prevtask"), nx = $("nexttask"); if (pv) pv.disabled = i === 0; if (nx) nx.disabled = i === EX.length - 1;
@@ -1062,7 +1069,7 @@ window.addEventListener("load", function () {
     document.title = tr("Regression Repair Tasks");
     document.querySelector(".top h1").textContent = tr("Regression Repair Tasks");
     document.querySelector(".top label").textContent = tr("task");
-    document.querySelector(".top .note").textContent = tr("fix the new version: remove the regression, keep the listed changes");
+    document.querySelector(".top .note").textContent = tr("fix the new version so that it behaves like the old one");
     if (LANG === "ko") $("start").innerHTML = KO_START;
     if (cmOld.setOption) cmOld.setOption("readOnly", true);
     document.querySelector("label[for=old]").textContent = tr("old version (fixed)");
@@ -1080,7 +1087,7 @@ window.addEventListener("load", function () {
     var started = false; try { started = localStorage.getItem("eval:started") === "1"; } catch (e) { }
     var nreal = EX.filter(function (e) { return !isTut(e.name); }).length;
     document.querySelector("#start .ntasks").textContent = nreal;
-    if (nreal < EX.length) document.querySelector("#start ul").insertAdjacentHTML("afterend", "<p>" + tr("TUTORIAL_NOTE") + "</p>");
+    if (nreal < EX.length) document.querySelector("#start .goalp").insertAdjacentHTML("afterend", "<p>" + tr("TUTORIAL_NOTE") + "</p>");
     if (SURVEY && ((SURVEY.pre || []).length || (SURVEY.post || []).length)) $("startbtn").insertAdjacentHTML("beforebegin", "<p>" + tr("SURVEY_NOTE") + "</p>");
     var begin = function (i) {
       document.body.classList.remove("starting"); $("start").hidden = true;

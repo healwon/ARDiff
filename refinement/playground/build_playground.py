@@ -6,8 +6,9 @@ usage: build_playground.py OUT.html [--examples [LABEL=]DIR ...] [--report repor
               (default: <repo>/examples/simple). Examples of the second and later folders are named LABEL/<name>/<kind>
   --pick      names (e.g. EvenSum,Overtime) to keep from the first --examples folder; the rest are left out
   --benchmarks folder of benchmarks (e.g. <repo>/benchmarks): each subfolder becomes a group, pairs found at any depth
-  --eval      folder of evaluation tasks (<task>/{oldV,newV,specV,fixedV}.java + task.json): builds the task page instead.
-              specV (old plus only the intended change) is what edits are checked against; it is embedded base64-encoded.
+  --eval      folder of evaluation tasks (<task>/{oldV,newV,fixedV}.java + task.json): builds the task page instead.
+              Edits are checked against the old version, or against specV.java (old plus an intended change) when a task
+              has one; a spec is embedded base64-encoded.
               The reference fix is not embedded, only how many tokens it changes
   --report    commit_check report.json files; their ARDiff verdicts are shown for the matching examples
 """
@@ -86,8 +87,10 @@ def main():
             old, new = open(os.path.join(d, "oldV.java")).read(), open(os.path.join(d, "newV.java")).read()
             fixed = open(os.path.join(d, "fixedV.java")).read().replace("fixedV", "newV")
             examples.append({"name": t, "group": "tasks", "old": old, "new": new})
-            spec = open(os.path.join(d, "specV.java")).read().replace("specV", "newV")
-            evals[t] = dict(meta, refTokens=changed_tokens(new, fixed), spec=base64.b64encode(spec.encode()).decode())
+            evals[t] = dict(meta, refTokens=changed_tokens(new, fixed))
+            if os.path.exists(os.path.join(d, "specV.java")):      # optional: without it the old version is the target
+                spec = open(os.path.join(d, "specV.java")).read().replace("specV", "newV")
+                evals[t]["spec"] = base64.b64encode(spec.encode()).decode()
 
     page = open(os.path.join(HERE, "template.html")).read()
     page = page.replace("/*__EVAL__*/null", json.dumps(evals).replace("</", "<\\/"))

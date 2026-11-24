@@ -1,5 +1,5 @@
 public class oldV {
-    // before: returns the smaller of a and b
+    // Returns the smaller of a and b
     public static double snippet(int a, int b) {
         int r = 0;
         if (a < b) {

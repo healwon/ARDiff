@@ -1,5 +1,5 @@
 public class fixedV {
-    // reference fix: free from 80 inclusive, and a free order still pays the express part
+    // reference fix: no express part, and free only from 100
     public static double snippet(int weight, int total, int express) {
         int base = 5;
         int extra = 0;
@@ -11,9 +11,9 @@ public class fixedV {
         if (express == 1) {
             rush = 7;
         }
-        fee = base + extra + rush;
-        if (total >= 80) {
-            fee = rush;
+        fee = base + extra;
+        if (total >= 100) {
+            fee = 0;
         }
         return fee;
     }

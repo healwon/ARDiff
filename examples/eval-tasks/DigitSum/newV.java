@@ -1,9 +1,4 @@
 public class newV {
-    // after: negative numbers are now summed by their digits as well
-    // constraints:
-    //   1. do not change the loop body
-    //   2. the while condition must still compare against 10
-    //   3. do not change the line `m = n;`
     public static double snippet(int n) {
         int sum = 0;
         int m = 0;
