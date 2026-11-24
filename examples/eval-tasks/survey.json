@@ -48,7 +48,7 @@
    "id": "equiv",
    "type": "scale",
    "text": "How familiar are you with equivalence checking or symbolic execution tools?",
-   "text_ko": "동치 검사나 심볼릭 실행 도구에 얼마나 익숙한가요?",
+   "text_ko": "동치 검사(equivalence checking)나 심볼릭 실행(symbolic execution) 도구에 얼마나 익숙한가요?",
    "low": "not at all",
    "high": "very",
    "low_ko": "전혀",

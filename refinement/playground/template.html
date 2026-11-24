@@ -200,26 +200,26 @@ var KO = {
   "changes the result": "결과를 바꿈", "no effect on the result": "결과에 영향 없음", "changes the result alone — restored by": "혼자서는 결과를 바꿈 — 되돌리는 변경",
   "matters only together with": "다음 변경과 함께일 때만 의미 있음", "cannot be tried alone": "따로 시험할 수 없음",
   "matters only together with other changes": "다른 변경과 함께일 때만 의미 있음", "execution of the selected input": "선택한 입력의 실행 흐름", "runs diverge": "실행이 갈라지는 곳",
-  "{0} of {1} inputs differ": "입력 {1}개 중 {0}개에서 다름", "same on {0} inputs": "입력 {0}개에서 모두 같음", " (time limit)": " (시간 제한)",
+  "old and new differ": "old와 new가 다름", "old and new give the same results": "old와 new가 같은 결과", " (time limit)": " (시간 제한)",
   "inputs": "입력", "misses the spec": "spec과 다름", "as the spec": "spec과 같음", "differ": "다름", "same": "같음",
   "result slice": "결과 슬라이스", "dim the lines the returned value does not depend on (through data or control)": "반환값이 (데이터나 제어로) 기대지 않는 줄을 흐리게",
   "click a line to see where its values come from": "줄을 누르면 그 값이 어디서 왔는지 보여요", "no code changes": "바뀐 코드 없음", "(none)": "(없음)",
   "running…": "실행 중…", "loading z3…": "z3 불러오는 중…", "unavailable: {0}": "사용할 수 없음: {0}",
   "raw z3 log": "z3 로그 원본", "original ARDiff raw output ↗": "원래 ARDiff 출력 원본 ↗",
   "does not run: {0}": "실행되지 않음: {0}",
-  "intended change in place: follows the spec on all {0} tested inputs where it should differ from old": "의도된 변경 반영됨: old와 달라야 하는 테스트 입력 {0}개 모두에서 spec과 같음",
-  "intended change missing on {0} of {1} inputs, e.g. {2}: should be {3} (old {4}), is {5}": "의도된 변경 누락: 입력 {1}개 중 {0}개. 예: {2} → {3}이어야 함(old {4}), 지금은 {5}",
-  "nothing else changed: same as old on all {0} other tested inputs": "그 외 변화 없음: 나머지 테스트 입력 {0}개 모두 old와 같음",
-  "unintended difference on {0} of {1} inputs, e.g. {2}: should stay {3}, is {4}": "의도하지 않은 차이: 입력 {1}개 중 {0}개. 예: {2} → {3}으로 유지돼야 함, 지금은 {4}",
+  "intended change in place: follows the spec where it should differ from old": "의도된 변경 반영됨: old와 달라야 하는 곳에서 spec과 같음",
+  "intended change missing, e.g. {0}: should be {1} (old {2}), is {3}": "의도된 변경 누락. 예: {0} → {1}이어야 함(old {2}), 지금은 {3}",
+  "nothing else changed: same as old elsewhere": "그 외 변화 없음: 나머지는 old와 같음",
+  "unintended difference, e.g. {0}: should stay {1}, is {2}": "의도하지 않은 차이. 예: {0} → {1}으로 유지돼야 함, 지금은 {2}",
   "ARDiff-lite unavailable here (it runs on the GitHub Pages version)": "여기서는 ARDiff-lite를 쓸 수 없음 (GitHub Pages 버전에서 동작)",
   "ARDiff-lite against the spec: checking…": "ARDiff-lite spec 비교: 확인 중…",
   "ARDiff-lite against the old version: checking…": "ARDiff-lite 기존 버전 비교: 확인 중…",
   "ARDiff-lite could not decide against the old version ({0}); the tests decide": "ARDiff-lite가 기존 버전과 비교해 판정하지 못함 ({0}); 테스트 결과로 판단",
-  "ARDiff-lite: equivalent to the old version": "ARDiff-lite: 기존 버전과 동치", "ARDiff-lite against the old version: {0}": "ARDiff-lite 기존 버전 비교: {0}",
-  "same result as the old version on all {0} tested inputs": "테스트 입력 {0}개 모두에서 기존 버전과 같은 결과",
-  "differs from the old version on {0} of {1} inputs, e.g. {2}: should be {3}, is {4}": "기존 버전과 다름: 입력 {1}개 중 {0}개. 예: {2} → {3}이어야 함, 지금은 {4}",
+  "ARDiff-lite: equivalent to the old version": "ARDiff-lite: 기존 버전과 같음", "ARDiff-lite against the old version: {0}": "ARDiff-lite 기존 버전 비교: {0}",
+  "same result as the old version": "기존 버전과 같은 결과",
+  "differs from the old version, e.g. {0}: should be {1}, is {2}": "기존 버전과 다름. 예: {0} → {1}이어야 함, 지금은 {2}",
   "ARDiff-lite could not decide against the spec ({0}); the tests decide": "ARDiff-lite가 spec과 비교해 판정하지 못함 ({0}); 테스트 결과로 판단",
-  "ARDiff-lite: equivalent to the spec": "ARDiff-lite: spec과 동치",
+  "ARDiff-lite: equivalent to the spec": "ARDiff-lite: spec과 같음",
   "ARDiff-lite against the spec: {0}": "ARDiff-lite spec 비교: {0}", " — e.g. {0}: should be {1}, is {2}": " — 예: {0} → {1}이어야 함, 지금은 {2}",
   "solved": "해결", "reset to the given new version": "처음 주어진 새 버전으로 되돌리기", "behaviour": "동작", "keep": "유지",
   "edit size: {0} tokens changed from the given new version (reference fix: {1})": "수정 크기: 주어진 새 버전에서 {0}토큰 변경 (참고 수정: {1})",
@@ -245,7 +245,7 @@ var KO = {
   "edit either version — the analysis on the right updates as you type": "어느 버전이든 고치면 오른쪽 분석이 바로 바뀌어요", "old version": "기존 버전", "new version": "새 버전", "example": "예시"
 };
 var KO_START = '<h2>회귀 수정 과제</h2>' +
-  '<p>작은 Java 메서드 <b class="ntasks">4</b>개를 한 과제씩 고칩니다. 각 과제의 <b>새 버전</b>은 <b>기존 버전</b>을 읽기 쉽게 리팩터링한 것인데, 그 과정에서 실수로 일부 입력의 동작이 바뀌었습니다(회귀).</p>' +
+  '<p>작은 Java 메서드 <b class="ntasks">4</b>개를 한 과제씩 고칩니다. 각 과제의 <b>새 버전</b>은 <b>기존 버전</b>을 읽기 쉽게 리팩터링한 것인데, 그 과정에서 실수로 일부 입력의 동작이 바뀌었습니다(회귀, regression).</p>' +
   '<p class="goalp">새 버전을 고쳐서 <b>모든 입력에서 기존 버전과 똑같은 결과</b>를 내게 하세요. <b>기존 버전을 그대로 복사해 넣지 말고</b>, 새 버전을 최소한으로 고치세요. 기존 버전은 고칠 수 없습니다. 위쪽 체크리스트가 입력하는 대로 두 버전이 같게 동작하는지 알려 주고, ' +
   '<span class="chip eq">해결</span>이 뜨면 그 과제는 끝입니다. 어떤 과제는 두 버전의 차이를 보여주는 시각화가, 나머지 과제는 코드에 표시된 줄 diff만 나옵니다.</p>' +
   '<p><b>이전</b> / <b>다음</b>으로 과제를 옮겨 다닐 수 있고, 고친 코드는 이 브라우저에 남아 다시 돌아와도 이어서 할 수 있습니다. 과제마다 걸린 시간을 측정합니다. ' +
@@ -377,16 +377,16 @@ function renderTask() {
   if (sc.error) items.push({ok: false, txt: tr("does not run: {0}", sc.error)});
   else if (!taskSpec()) {
     items.push({ok: sc.otherOk === sc.other, txt: sc.otherOk === sc.other ?
-      tr("same result as the old version on all {0} tested inputs", sc.other) :
-      tr("differs from the old version on {0} of {1} inputs, e.g. {2}: should be {3}, is {4}", sc.other - sc.otherOk, sc.other, inputText(sc.regEx.inp), sc.regEx.want, sc.regEx.got)});
+      tr("same result as the old version") :
+      tr("differs from the old version, e.g. {0}: should be {1}, is {2}", inputText(sc.regEx.inp), sc.regEx.want, sc.regEx.got)});
   }
   else {
     items.push({ok: sc.intendedOk === sc.intended, txt: sc.intendedOk === sc.intended ?
-      tr("intended change in place: follows the spec on all {0} tested inputs where it should differ from old", sc.intended) :
-      tr("intended change missing on {0} of {1} inputs, e.g. {2}: should be {3} (old {4}), is {5}", sc.intended - sc.intendedOk, sc.intended, inputText(sc.missEx.inp), sc.missEx.want, sc.missEx.old, sc.missEx.got)});
+      tr("intended change in place: follows the spec where it should differ from old") :
+      tr("intended change missing, e.g. {0}: should be {1} (old {2}), is {3}", inputText(sc.missEx.inp), sc.missEx.want, sc.missEx.old, sc.missEx.got)});
     items.push({ok: sc.otherOk === sc.other, txt: sc.otherOk === sc.other ?
-      tr("nothing else changed: same as old on all {0} other tested inputs", sc.other) :
-      tr("unintended difference on {0} of {1} inputs, e.g. {2}: should stay {3}, is {4}", sc.other - sc.otherOk, sc.other, inputText(sc.regEx.inp), sc.regEx.want, sc.regEx.got)});
+      tr("nothing else changed: same as old elsewhere") :
+      tr("unintended difference, e.g. {0}: should stay {1}, is {2}", inputText(sc.regEx.inp), sc.regEx.want, sc.regEx.got)});
   }
   // ARDiff-lite only fails the task when it finds a real difference; when it cannot decide, the tests decide
   var lv = lite.error ? null : lite.spec ? lite.spec.verdict : undefined;
@@ -619,8 +619,8 @@ function render(o, n) {
   $("err").className = "err"; $("err").hidden = !res.error; $("svw").hidden = !!res.error; $("lg").hidden = !!res.error;
   if (res.error) { $("err").textContent = res.error; $("chips").innerHTML = chips.join(""); $("cards").innerHTML = ""; $("ins").innerHTML = ""; $("tbl").innerHTML = ""; $("bar").textContent = ""; clearSvg(); clearMarks(); renderRawTests(); return; }
   var nd = res.diffIdx.length, N = res.inputs.length;
-  chips.push("<span class='chip " + (nd ? "neq" : "eq") + "' title='old and new run on " + N + " boundary and random inputs; testing, not a proof'>" +
-             (nd ? tr("{0} of {1} inputs differ", nd, N) : tr("same on {0} inputs", N)) + (res.capped ? tr(" (time limit)") : "") + "</span>");
+  chips.push("<span class='chip " + (nd ? "neq" : "eq") + "'>" +
+             (nd ? tr("old and new differ") : tr("old and new give the same results")) + (res.capped ? tr(" (time limit)") : "") + "</span>");
   if (res.unsupported) chips.push("<span class='chip unk'>" + esc(res.unsupported.replace("?unsupported: ", "")) + "</span>");
   $("chips").innerHTML = chips.join("");
 
