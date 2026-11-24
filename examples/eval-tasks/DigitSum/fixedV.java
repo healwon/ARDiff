@@ -1,21 +1,14 @@
 public class fixedV {
-    // reference fix: loop while m > 0, and no last digit added after the loop
+    // reference fix: loop while two or more digits are left (m > 9), and add the last digit only for positive m
     public static double snippet(int n) {
         int sum = 0;
         int m = 0;
-        m = n;
-        while (m > 0) {
-            sum = sum + abs(m) % 10;
-            m = m / 10;
+        for (m = n; m > 9; m = m / 10) {
+            sum = sum + m % 10;
+        }
+        if (m > 0) {
+            sum = sum + m;
         }
         return sum;
-    }
-
-    public static int abs(int n) {
-        if (n < 0) {
-            return -n;
-        } else {
-            return n;
-        }
     }
 }

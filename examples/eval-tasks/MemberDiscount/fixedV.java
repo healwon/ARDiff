@@ -1,5 +1,5 @@
 public class fixedV {
-    // reference fix: every member gets the 5%, and each discount is taken from the unit price as before
+    // reference fix: each discount is taken from the unit price and rounded on its own, as before
     public static double snippet(int price, int qty, int member) {
         int total = 0;
         int pct = 0;

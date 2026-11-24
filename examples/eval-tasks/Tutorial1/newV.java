@@ -1,13 +1,9 @@
 public class newV {
+    // refactored for readability: start from a and replace it when b is larger
     public static double snippet(int a, int b) {
-        int r = 0;
-        if (a > b) {
+        int r = a;
+        if (b > a) {
             r = a;
-        } else {
-            r = a;
-        }
-        if (r < 0) {
-            r = 0;
         }
         return r;
     }

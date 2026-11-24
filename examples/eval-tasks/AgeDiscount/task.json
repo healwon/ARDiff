@@ -1,0 +1,8 @@
+{
+ "title": "Age discount",
+ "title_ko": "나이 할인",
+ "difficulty": "easy",
+ "goal": "Old version: returns the price, and half the price for children under 12 and for people aged 65 or older (price 100: age 30 → 100, age 8 → 50, age 65 → 50).\nNew version: a refactoring of the old version for readability (one discount rule with named conditions) that accidentally changed its behaviour.\nGoal: change the new version so that it returns the same result as the old version for every input. Do not copy the old version over the new one; change the new version as little as possible.",
+ "goal_ko": "기존 버전: 가격을 반환하되, 12세 미만이거나 65세 이상이면 절반 가격을 반환합니다 (price 100: 30세 → 100, 8세 → 50, 65세 → 50).\n새 버전: 읽기 쉽게 하려고 기존 버전을 리팩터링한 것(조건에 이름을 붙여 할인 규칙 하나로 합치기)인데, 실수로 동작이 바뀌었습니다.\n목표: 모든 입력에서 기존 버전과 같은 결과를 내도록 새 버전을 고치세요. 기존 버전을 그대로 복사해 넣지 말고, 새 버전을 최소한으로 고치세요.",
+ "keep": []
+}

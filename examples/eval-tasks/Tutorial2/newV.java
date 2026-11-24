@@ -1,14 +1,10 @@
 public class newV {
+    // refactored for readability: start from a, keep the smaller value in a named variable
     public static double snippet(int a, int b) {
-        int r = 0;
-        if (a < b) {
-            r = a;
-        } else {
-            r = a;
+        int smaller = a;
+        if (b > smaller) {
+            smaller = b;
         }
-        if (r > 50) {
-            r = 50;
-        }
-        return r;
+        return smaller;
     }
 }

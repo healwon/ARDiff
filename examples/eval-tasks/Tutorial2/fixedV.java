@@ -1,12 +1,10 @@
 public class fixedV {
-    // reference fix: the else branch takes b, and the result is not capped at 50
+    // reference fix: b replaces a only when b is smaller
     public static double snippet(int a, int b) {
-        int r = 0;
-        if (a < b) {
-            r = a;
-        } else {
-            r = b;
+        int smaller = a;
+        if (b < smaller) {
+            smaller = b;
         }
-        return r;
+        return smaller;
     }
 }

@@ -1,7 +1,8 @@
 {
  "title": "Shipping fee",
- "goal": "Old version: the fee is 5 plus 1 per 2 kg over 10 kg, and 0 from a total of 100 (weight 14, total 50 → 7; total 80 → 7; total 100 → 0).\nGoal: change the new version so that it returns the same result as the old version for every input. Do not copy the old version over the new one; change the new version as little as possible.",
+ "goal": "Old version: the fee is 5 plus 1 per 2 kg over 10 kg, and 0 from a total of 100 (weight 14, total 50 → 7; total 80 → 7; total 100 → 0).\nNew version: a refactoring of the old version for readability (the fee assembled from named parts) that accidentally changed its behaviour.\nGoal: change the new version so that it returns the same result as the old version for every input. Do not copy the old version over the new one; change the new version as little as possible.",
  "keep": [],
  "title_ko": "배송비",
- "goal_ko": "기존 버전: 배송비는 5에 10kg을 넘는 2kg마다 1을 더하고, 합계가 100 이상이면 0입니다 (weight 14, total 50 → 7; total 80 → 7; total 100 → 0).\n목표: 모든 입력에서 기존 버전과 같은 결과를 내도록 새 버전을 고치세요. 기존 버전을 그대로 복사해 넣지 말고, 새 버전을 최소한으로 고치세요."
+ "goal_ko": "기존 버전: 배송비는 5에 10kg을 넘는 2kg마다 1을 더하고, 합계가 100 이상이면 0입니다 (weight 14, total 50 → 7; total 80 → 7; total 100 → 0).\n새 버전: 읽기 쉽게 하려고 기존 버전을 리팩터링한 것(배송비를 이름 붙인 부분들로 조립하기)인데, 실수로 동작이 바뀌었습니다.\n목표: 모든 입력에서 기존 버전과 같은 결과를 내도록 새 버전을 고치세요. 기존 버전을 그대로 복사해 넣지 말고, 새 버전을 최소한으로 고치세요.",
+ "difficulty": "easy"
 }

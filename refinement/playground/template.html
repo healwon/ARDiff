@@ -137,8 +137,8 @@ body.evalpage.rawmode #lite,body.evalpage.rawmode #rawtests,body.evalpage .top .
 <div class="start" id="survey" hidden></div>
 <div class="start" id="start" hidden>
   <h2>Regression repair tasks</h2>
-  <p>You will fix <b class="ntasks">4</b> small Java methods, one task at a time. In every task, the <b>new version</b> was changed from the
-    <b>old version</b> and now behaves differently for some inputs.</p>
+  <p>You will fix <b class="ntasks">4</b> small Java methods, one task at a time. In every task, the <b>new version</b> is a refactoring of the
+    <b>old version</b>, rewritten to be easier to read, but the rewrite accidentally changed what it does for some inputs (a regression).</p>
   <p class="goalp">Edit the new version so that it returns <b>exactly the same result as the old version for every input</b>.
     <b>Do not copy the old version over the new one</b>: change the new version as little as possible. The old version cannot be edited. The checklist above the code tells you, as you type, whether the two versions behave the same; a task is done when it
     says <span class="chip eq">solved</span>. Some tasks show a visualization of how the two versions differ; the others show only the line diff, marked in the code.</p>
@@ -245,7 +245,7 @@ var KO = {
   "edit either version — the analysis on the right updates as you type": "어느 버전이든 고치면 오른쪽 분석이 바로 바뀌어요", "old version": "기존 버전", "new version": "새 버전", "example": "예시"
 };
 var KO_START = '<h2>회귀 수정 과제</h2>' +
-  '<p>작은 Java 메서드 <b class="ntasks">4</b>개를 한 과제씩 고칩니다. 각 과제의 <b>새 버전</b>은 <b>기존 버전</b>에서 바뀌어, 일부 입력에서 다르게 동작합니다.</p>' +
+  '<p>작은 Java 메서드 <b class="ntasks">4</b>개를 한 과제씩 고칩니다. 각 과제의 <b>새 버전</b>은 <b>기존 버전</b>을 읽기 쉽게 리팩터링한 것인데, 그 과정에서 실수로 일부 입력의 동작이 바뀌었습니다(회귀).</p>' +
   '<p class="goalp">새 버전을 고쳐서 <b>모든 입력에서 기존 버전과 똑같은 결과</b>를 내게 하세요. <b>기존 버전을 그대로 복사해 넣지 말고</b>, 새 버전을 최소한으로 고치세요. 기존 버전은 고칠 수 없습니다. 위쪽 체크리스트가 입력하는 대로 두 버전이 같게 동작하는지 알려 주고, ' +
   '<span class="chip eq">해결</span>이 뜨면 그 과제는 끝입니다. 어떤 과제는 두 버전의 차이를 보여주는 시각화가, 나머지 과제는 코드에 표시된 줄 diff만 나옵니다.</p>' +
   '<p><b>이전</b> / <b>다음</b>으로 과제를 옮겨 다닐 수 있고, 고친 코드는 이 브라우저에 남아 다시 돌아와도 이어서 할 수 있습니다. 과제마다 걸린 시간을 측정합니다. ' +
@@ -874,14 +874,20 @@ function draw() {
 }
 
 // task page: which tasks show the visualization (the others show only the line diff). Each browser draws once, at random,
-// half of the tasks with it and half without, and keeps that; ?viz=1 / ?viz=0 force one way for every task
+// half of the tasks of each difficulty with it and half without, and keeps that; ?viz=1 / ?viz=0 force one way for every task
 function vizPlan() {
   var key = "eval:vizplan", plan = null, names = EX.filter(function (e) { return !isTut(e.name); }).map(function (e) { return e.name; });
   try { plan = JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { }
   if (/[?&](restart|reassign)\b/.test(location.search) || !plan || names.some(function (n) { return !(n in plan); })) {
-    var order = names.slice();
-    for (var i = order.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = order[i]; order[i] = order[j]; order[j] = t; }
-    plan = {}; order.forEach(function (n, k) { plan[n] = k < Math.ceil(order.length / 2) ? 1 : 0; });
+    // balanced by difficulty (task.json "difficulty"): within each difficulty, half of the tasks at random get it
+    var groups = {};
+    names.forEach(function (n) { var d = EVAL[n].difficulty || "all"; (groups[d] = groups[d] || []).push(n); });
+    plan = {};
+    Object.keys(groups).forEach(function (d) {
+      var order = groups[d].slice();
+      for (var i = order.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = order[i]; order[i] = order[j]; order[j] = t; }
+      order.forEach(function (n, k) { plan[n] = k < Math.ceil(order.length / 2) ? 1 : 0; });
+    });
     try { localStorage.setItem(key, JSON.stringify(plan)); } catch (e) { }
   }
   return plan;
@@ -955,8 +961,8 @@ function surveyText() {
 function resultsText(pid) {
   var L = mlog(), rows = EX.map(function (e) { var T = mtask(L, e.name), code = ""; try { code = localStorage.getItem("eval:" + e.name) || e.new; } catch (x) { code = e.new; } return {e: e, T: T, code: code}; });
   var head = "Participant: " + (pid || "(none)") + "\nFinished: " + new Date().toISOString() + "\nLanguage: " + LANG + "\n\n" +
-    "| # | task | view | active time | solved at | edits | solved at the end |\n|---|---|---|---|---|---|---|\n" +
-    rows.map(function (r, k) { return "| " + posLabel(k) + " | " + EVAL[r.e.name].title + " | " + r.T.view + " | " + fmtTime(r.T.ms) + " | " + fmtTime(r.T.solvedMs) + " | " + r.T.edits + " | " + (r.T.solved ? "yes" : "no") + " |"; }).join("\n") + "\n";
+    "| # | task | difficulty | view | active time | solved at | edits | solved at the end |\n|---|---|---|---|---|---|---|---|\n" +
+    rows.map(function (r, k) { return "| " + posLabel(k) + " | " + EVAL[r.e.name].title + " | " + (EVAL[r.e.name].difficulty || (isTut(r.e.name) ? "tutorial" : "")) + " | " + r.T.view + " | " + fmtTime(r.T.ms) + " | " + fmtTime(r.T.solvedMs) + " | " + r.T.edits + " | " + (r.T.solved ? "yes" : "no") + " |"; }).join("\n") + "\n";
   var code = rows.map(function (r) { return "\n<details><summary>final code: " + EVAL[r.e.name].title + "</summary>\n\n```java\n" + r.code.replace(/\n+$/, "") + "\n```\n</details>\n"; }).join("");
   return {head: head + surveyText(), code: code, rows: rows};
 }
@@ -996,7 +1002,7 @@ function showFinish() {
     var pid = $("pid").value.trim(), R = resultsText(pid), now = new Date();
     var data = {participant: pid || null, finished: now.toISOString(), lang: LANG, survey: sget(), order: EX.map(function (e) { return e.name; }),
       tasks: R.rows.map(function (r, k) {
-        return {position: isTut(r.e.name) ? 0 : +posLabel(k), tutorial: isTut(r.e.name), name: r.e.name, title: EVAL[r.e.name].title, view: r.T.view, activeMs: r.T.ms, solvedAtMs: r.T.solvedMs,
+        return {position: isTut(r.e.name) ? 0 : +posLabel(k), tutorial: isTut(r.e.name), difficulty: EVAL[r.e.name].difficulty || null, name: r.e.name, title: EVAL[r.e.name].title, view: r.T.view, activeMs: r.T.ms, solvedAtMs: r.T.solvedMs,
                 edits: r.T.edits, solved: r.T.solved, finalCode: r.code};
       })};
     var a = document.createElement("a");

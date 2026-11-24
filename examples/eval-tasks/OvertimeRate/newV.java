@@ -1,13 +1,12 @@
 public class newV {
+    // refactored for readability: regular and overtime hours split with Math.min / Math.max
     public static double snippet(int hours, int rate, int holiday) {
         int pay = 0;
         int regular = 0;
         int over = 0;
+        regular = Math.min(hours, 40);
         over = Math.max(hours - 40, 0);
-        pay = hours * rate + over * rate / 2;
-        if (holiday == 1) {
-            pay = pay * 2;
-        }
+        pay = regular * rate + over * rate * 3 / 2;
         return pay;
     }
 }
