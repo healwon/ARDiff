@@ -103,6 +103,7 @@ body.rawmode .rawtests{display:block}body.rawmode .lite pre.raw{max-height:70vh}
 /* evaluation tasks (eval.html) */
 .start{max-width:720px;margin:40px auto;padding:24px 28px;border:1px solid var(--rule);border-radius:10px;background:var(--panel);font-size:14.5px;line-height:1.6}
 .start h2{margin:0 0 10px;font-size:20px}.start p,.start ul{margin:8px 0}.start li{margin:2px 0}
+.start details.about{margin:12px 0;border:1px solid var(--rule);border-radius:6px;padding:6px 12px}.start details.about summary{cursor:pointer;font-weight:600}.start details.about .hd,.start details.about[open] .sh{display:none}.start details.about[open] .hd{display:inline}.start details.about h3{font-size:14.5px;margin:12px 0 4px}
 .start #startbtn{margin-top:14px;font:inherit;font-weight:600;padding:7px 22px;border-radius:6px;border:1px solid var(--flow);background:var(--flowsoft);color:var(--fg);cursor:pointer}
 body.surveying .main,body.surveying .top .tnav,body.surveying .top select,body.surveying .top label,body.surveying #finishbtn{display:none}
 .start .q{margin:14px 0}.start .q .qt{font-weight:600;margin-bottom:6px}.start .q label{margin-right:14px;white-space:nowrap}.start .q textarea{width:100%;min-height:60px;font:inherit;padding:6px;border:1px solid var(--rule);border-radius:4px;background:var(--panel);color:var(--fg)}
@@ -144,6 +145,36 @@ body.evalpage.rawmode #lite,body.evalpage.rawmode #rawtests,body.evalpage .top .
     says <span class="chip eq">solved</span>. Some tasks show a visualization of how the two versions differ; the others show only the line diff, marked in the code.</p>
   <p>Use <b>prev</b> / <b>next</b> to move between tasks. Your edits are kept in this browser, so you can come back to a task.
     The time you spend on each task is measured. When you are done, press <b>finish</b> (top right) to see your results and submit them.</p>
+  <details class="about"><summary>What ARDiff and the visualization do <span class="sh">(show)</span><span class="hd">(hide)</span></summary>
+    <h3>Regression</h3>
+    <p>A regression is a behaviour that used to work and stops working after a code change, without anyone meaning to change it.
+      For example, while rewriting <code>a &lt; b</code> to read better, someone writes <code>a &lt;= b</code>: the result is now different when <code>a == b</code>.
+      In these tasks, the old version is the behaviour that worked, and the new version is the rewrite that broke it for some inputs.</p>
+    <h3>ARDiff</h3>
+    <p><b>Purpose:</b> the most common way to find and fix regressions is testing, but tests only try some inputs, so a regression can remain on inputs that were never tried.
+      ARDiff is meant to answer, for all inputs at once, whether a change kept the behaviour, and if not, to give an input that shows the difference.</p>
+    <p>ARDiff asks an automated prover (SMT solver, z3): "is there any input where old and new give different results?"
+      A long piece of code makes that question hard, so at first ARDiff lumps the parts that are the same in both versions together as "some unknown value".
+      Because of that, the solver sometimes finds a difference that the real code does not have. Then ARDiff puts one of those parts back as real code and asks again.</p>
+    <p>The result is one of the following three:</p>
+    <ul>
+      <li><b>EQUIVALENT</b>: the results are the same for every input</li>
+      <li><b>NOT EQUIVALENT</b>: some input gives different results (one such input is shown)</li>
+      <li><b>UNKNOWN</b>: it could not decide</li>
+    </ul>
+    <p>This page uses <b>ARDiff-lite</b>, a version of ARDiff rebuilt to run in the browser. Its result appears in the checklist.</p>
+    <h3>The visualization</h3>
+    <p><b>Purpose:</b> knowing that the two pieces of code differ does not tell you where to fix. The visualization presented in this study is meant to help you fix the code
+      by showing visually which change in the code causes the difference, and on which inputs and along which execution path it shows up.</p>
+    <ul>
+      <li><b>Code changes</b>: one card for each place where old and new differ, tagged with what it does to the result:
+        changes the result, has no effect, or matters only together with another change.</li>
+      <li><b>Inputs</b>: example inputs with the results of old and new; the ones where they differ are highlighted.
+        Click one to see, in the side-by-side code, which lines each version runs and where the two runs go apart.</li>
+      <li>Clicking a line during a run shows where its values come from.</li>
+    </ul>
+    <p>Tasks without the visualization show only the line diff marked in the code, plus the checklist.</p>
+  </details>
   <button type="button" id="startbtn">Start</button>
 </div>
 <div class="main">
@@ -197,7 +228,7 @@ var LANG = (function () {
   return (navigator.language || "").toLowerCase().indexOf("ko") === 0 ? "ko" : "en";
 })();
 var KO = {
-  "changes the result": "결과를 바꿈", "no effect on the result": "결과에 영향 없음", "changes the result alone — restored by": "혼자서는 결과를 바꿈 — 되돌리는 변경",
+  "changes the result": "결과를 바꿈", "no effect on the result": "결과에 영향 없음", "changes the result alone, but other changes cancel it out": "혼자서는 결과를 바꾸지만 다른 변경과 상쇄됨", "change #{0}": "변경#{0}",
   "matters only together with": "다음 변경과 함께일 때만 의미 있음", "cannot be tried alone": "따로 시험할 수 없음",
   "matters only together with other changes": "다른 변경과 함께일 때만 의미 있음", "execution of the selected input": "선택한 입력의 실행 흐름", "runs diverge": "실행이 갈라지는 곳",
   "old and new differ": "old와 new가 다름", "old and new give the same results": "old와 new가 같은 결과", " (time limit)": " (시간 제한)",
@@ -245,11 +276,37 @@ var KO = {
   "edit either version — the analysis on the right updates as you type": "어느 버전이든 고치면 오른쪽 분석이 바로 바뀌어요", "old version": "기존 버전", "new version": "새 버전", "example": "예시"
 };
 var KO_START = '<h2>Regression Repair Tasks</h2>' +
-  '<p>작은 Java 메서드 <b class="ntasks">4</b>개를 한 과제씩 고칩니다. 각 과제의 <b>새 버전</b>은 <b>기존 버전</b>을 읽기 쉽게 리팩터링한 것인데, 그 과정에서 실수로 일부 입력의 동작이 바뀌었습니다(회귀, regression).</p>' +
+  '<p>작은 Java 메서드 <b class="ntasks">4</b>개를 한 과제씩 고칩니다. 각 과제의 <b>새 버전</b>은 <b>기존 버전</b>을 읽기 쉽게 리팩터링한 것인데, 그 과정에서 실수로 일부 입력의 동작이 바뀌는 회귀(regression)가 생겼습니다.</p>' +
   '<p class="goalp">새 버전을 고쳐서 <b>모든 입력에서 기존 버전과 똑같은 결과</b>를 내게 하세요. <b>기존 버전을 그대로 복사해 넣지 말고</b>, 새 버전을 최소한으로 고치세요. 기존 버전은 고칠 수 없습니다. 위쪽 체크리스트가 입력하는 대로 두 버전이 같게 동작하는지 알려 주고, ' +
   '<span class="chip eq">해결</span>이 뜨면 그 과제는 끝입니다. 어떤 과제는 두 버전의 차이를 보여주는 시각화가, 나머지 과제는 코드에 표시된 line diff만 나옵니다.</p>' +
   '<p><b>이전</b> / <b>다음</b>으로 과제를 옮겨 다닐 수 있고, 고친 코드는 이 브라우저에 남아 다시 돌아와도 이어서 할 수 있습니다. 과제마다 걸린 시간을 측정합니다. ' +
-  '다 마치면 오른쪽 위 <b>완료</b>를 눌러 결과를 확인하고 제출하세요.</p><button type="button" id="startbtn">시작</button>';
+  '다 마치면 오른쪽 위 <b>완료</b>를 눌러 결과를 확인하고 제출하세요.</p>' +
+  '<details class="about"><summary>ARDiff와 시각화가 하는 일 <span class="sh">(펼치기)</span><span class="hd">(접기)</span></summary>' +
+  '<h3>회귀(regression)</h3>' +
+  '<p>회귀는 코드를 바꾼 뒤, 바꿀 생각이 없던 동작이 이전과 달라지는 것입니다. ' +
+  '예를 들어 <code>a &lt; b</code>를 읽기 쉽게 고치다가 <code>a &lt;= b</code>로 쓰면, <code>a == b</code>일 때 결과가 달라집니다. ' +
+  '이 과제에서는 기존 버전이 원래 잘 되던 동작이고, 새 버전은 그것을 고쳐 쓰다가 일부 입력에서 동작이 달라진 코드입니다.</p>' +
+  '<h3>ARDiff</h3>' +
+  '<p><b>목적:</b> 회귀(regression)를 찾고 고치는 방법 중 가장 흔한 것은 테스트지만, 테스트는 일부 입력만 시험하므로 테스트를 통과해도 시험하지 않은 입력에 회귀(regression)가 남아 있을 수 있습니다. ' +
+  'ARDiff는 변경 후에도 동작이 그대로인지 모든 입력에 대해 한 번에 답하고, 아니라면 차이를 보여 주는 입력을 내놓는 것을 목표로 합니다.</p>' +
+  '<p>ARDiff는 자동 증명 도구 (SMT solver, z3)에게 “old와 new의 결과가 달라지는 입력이 있나?”를 묻습니다. ' +
+  '코드가 길면 이 질문이 어려워지므로, 처음에는 두 버전에서 똑같은 부분을 “어떤 모르는 값”으로 뭉뚱그려 묻습니다. ' +
+  '그래서 솔버가 실제 코드에는 없는 차이를 찾을 때가 있는데, 그러면 뭉뚱그렸던 부분을 하나씩 원래 코드로 되돌려 다시 묻습니다.</p>' +
+  '<p>결과는 다음 셋 중 하나입니다.</p><ul>' +
+  '<li><b>EQUIVALENT</b>: 어떤 입력에서도 결과가 같음</li>' +
+  '<li><b>NOT EQUIVALENT</b>: 결과가 다른 입력이 있음 (그 입력을 예로 보여 줌)</li>' +
+  '<li><b>UNKNOWN</b>: 판정하지 못함</li></ul>' +
+  '<p>이 페이지는 ARDiff를 브라우저에서 돌아가도록 다시 만든 <b>ARDiff-lite</b>를 쓰고, 그 결과가 체크리스트에 나옵니다.</p>' +
+  '<h3>시각화</h3>' +
+  '<p><b>목적:</b> 두 코드가 다르다는 것만으로는 어디를 고쳐야 할지 알 수 없습니다. ' +
+  '이 실험에서 제시하는 시각화는 코드의 어느 변경이 차이를 만드는지, 그 차이가 어떤 입력에서 어떤 실행 경로로 나타나는지 시각적으로 제시함으로써 수정을 돕는 것을 목표로 합니다.</p><ul>' +
+  '<li><b>코드 변경 사항</b>: old와 new가 다른 곳마다 카드가 하나씩 있고, 그 변경이 결과에 주는 영향이 표시됩니다. ' +
+  '결과를 바꿈, 영향 없음, 다른 변경과 함께일 때만 의미 있음 중 하나입니다.</li>' +
+  '<li><b>입력</b>: 예시 입력과 old·new의 결과입니다. 결과가 다른 입력은 강조됩니다. ' +
+  '하나를 누르면 나란히 놓인 코드에서 각 버전이 어떤 줄을 실행하는지, 두 실행이 어디서 갈라지는지 보여 줍니다.</li>' +
+  '<li>실행을 보는 중에 줄을 누르면 그 값이 어디서 왔는지 보여 줍니다.</li></ul>' +
+  '<p>시각화가 없는 과제는 코드에 표시된 line diff와 체크리스트만 나옵니다.</p></details>' +
+  '<button type="button" id="startbtn">시작</button>';
 // English text in, the current language out; {0}, {1}, … are filled with the remaining arguments
 var EN = {"TUT_NOTE_VIZ": "Tutorial: this task shows the <b>visualization</b> of how old and new differ. Some of the real tasks look like this.",
           "TUT_NOTE_RAW": "Tutorial: this task shows no visualization, only the <b>line diff</b> marked in the code. The other real tasks look like this.",
@@ -274,7 +331,7 @@ try { remote = JSON.parse(localStorage.getItem("srp.remote") || "{}"); } catch (
 function codeKey(o, n) { var h = 0, s = o + "\u0000" + n; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return String(h); }
 var $ = function (id) { return document.getElementById(id); };
 var esc = function (s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); };
-var LABEL = {changes: tr("changes the result"), none: tr("no effect on the result"), undone: tr("changes the result alone — restored by"), together: tr("matters only together with"), isolate: tr("cannot be tried alone")};
+var LABEL = {changes: tr("changes the result"), none: tr("no effect on the result"), undone: tr("changes the result alone, but other changes cancel it out"), together: tr("matters only together with"), isolate: tr("cannot be tried alone")};
 var cmOld, cmNew, res = null, st = {hk: null, run: null, dep: null, slice: false}, runs = [], cov = {}, timer = null, curEx = null, marks = [];
 
 function mk(id) {
@@ -376,7 +433,10 @@ function renderTask() {
   var sc = runs ? specCheck(src) : {error: (res && (res.error || res.unsupported)) || "does not run"};
   if (sc.error) items.push({ok: false, txt: tr("does not run: {0}", sc.error)});
   else if (!taskSpec()) {
-    items.push({ok: sc.otherOk === sc.other, txt: sc.otherOk === sc.other ?
+    // the tests' line is hidden once ARDiff-lite decides (its line says the same, with its own counterexample);
+    // it still counts towards "solved"
+    var decided = !lite.error && lite.spec && (lite.spec.verdict === "EQUIVALENT" || lite.spec.verdict === "NOT EQUIVALENT");
+    items.push({hide: decided, ok: sc.otherOk === sc.other, txt: sc.otherOk === sc.other ?
       tr("same result as the old version") :
       tr("differs from the old version, e.g. {0}: should be {1}, is {2}", inputText(sc.regEx.inp), sc.regEx.want, sc.regEx.got)});
   }
@@ -400,6 +460,7 @@ function renderTask() {
     return {ok: ok, txt: tdesc(k)};
   });
   var li = function (x) {
+    if (x.hide) return "";
     var c = x.ok === true ? "ok" : x.ok === "wait" ? "wait" : x.ok === "na" ? "na" : "bad";
     return "<div class='ti " + c + "'><span class='ic' aria-hidden='true'>" + {ok: "✓", bad: "✗", wait: "…", na: "–"}[c] + "</span><span>" + esc(x.txt) + "</span></div>";
   };
@@ -473,7 +534,7 @@ function z3() {
 function runLite(o, n) {
   var box = $("lite"), my = ++lite.token;
   lite.result = null; lite.error = null; lite.spec = null;
-  if (!window.ArdiffLite || !res || res.error) { box.hidden = true; return; }
+  if (!window.ArdiffLite || !res || res.error) { box.hidden = true; var tc = document.querySelector("#chips .tchip"); if (tc) tc.hidden = false; return; }
   box.hidden = false;
   box.innerHTML = "<div class='lh'><b title='abstraction-refinement with z3 running in this page; a re-implementation, not the original ARDiff'>ARDiff-lite</b><span class='muted'>" + (lite.z3 ? tr("running…") : tr("loading z3…")) + "</span></div>";
   setTimeout(function () {
@@ -517,9 +578,12 @@ function origRaw() {
   return "raw.html#" + EX[curEx].name;
 }
 
+// ARDiff-lite reached a verdict on old vs new: the tests' chip is then hidden, since the ARDiff-lite panel says the same
+function liteDecided() { return !!lite.result && (lite.result.verdict === "EQUIVALENT" || lite.result.verdict === "NOT EQUIVALENT"); }
 function renderLite() {
   renderTask();
-  var box = $("lite"), r = lite.result;
+  var box = $("lite"), r = lite.result, tc = document.querySelector("#chips .tchip");
+  if (tc) tc.hidden = liteDecided();
   if (lite.error) { box.innerHTML = "<div class='lh'><b title='abstraction-refinement with z3 running in this page; a re-implementation, not the original ARDiff'>ARDiff-lite</b><span class='muted'>" + esc(tr("unavailable: {0}", lite.error)) + "</span></div>"; return; }
   if (!r) return;
   var cls = {"EQUIVALENT": "eq", "NOT EQUIVALENT": "neq"}[r.verdict] || "unk";
@@ -619,7 +683,7 @@ function render(o, n) {
   $("err").className = "err"; $("err").hidden = !res.error; $("svw").hidden = !!res.error; $("lg").hidden = !!res.error;
   if (res.error) { $("err").textContent = res.error; $("chips").innerHTML = chips.join(""); $("cards").innerHTML = ""; $("ins").innerHTML = ""; $("tbl").innerHTML = ""; $("bar").textContent = ""; clearSvg(); clearMarks(); renderRawTests(); return; }
   var nd = res.diffIdx.length, N = res.inputs.length;
-  chips.push("<span class='chip " + (nd ? "neq" : "eq") + "'>" +
+  chips.push("<span class='chip tchip " + (nd ? "neq" : "eq") + "'" + (liteDecided() ? " hidden" : "") + ">" +
              (nd ? tr("old and new differ") : tr("old and new give the same results")) + (res.capped ? tr(" (time limit)") : "") + "</span>");
   if (res.unsupported) chips.push("<span class='chip unk'>" + esc(res.unsupported.replace("?unsupported: ", "")) + "</span>");
   $("chips").innerHTML = chips.join("");
@@ -628,9 +692,9 @@ function render(o, n) {
 
   $("cards").innerHTML = res.groups.map(function (g, k) {
     var lines = function (src, ls) { var a = src.split("\n"); return ls.length ? ls.map(function (l) { return "<code>" + esc(a[l - 1].trim()) + "</code>"; }).join("<br>") : "<span class='muted'>(none)</span>"; };
-    var tag = "<span class='tag " + g.role + "'>" + esc(LABEL[g.role]) + (g.with && g.with.length ? " " + g.with.map(function (j) { return "#" + (j + 1); }).join(", ") : "") + "</span>";
+    var tag = "<span class='tag " + g.role + "'>" + esc(LABEL[g.role]) + (g.with && g.with.length ? " (" + g.with.map(function (j) { return tr("change #{0}", j + 1); }).join(", ") + ")" : "") + "</span>";
     var ev = g.example !== undefined && g.role !== "none" ? "<span class='ev" + (res.diffIdx.indexOf(g.example) >= 0 ? " df" : "") + "' role='button' tabindex='0' data-run='" + g.example + "'><code>" + esc(inputText(res.inputs[g.example])) + "</code></span>" : "";
-    return "<div class='hk " + g.role + "' role='button' tabindex='0' data-hk='" + k + "'><div class='tags'><span class='num'>#" + (k + 1) + "</span>" + tag + "</div>" +
+    return "<div class='hk " + g.role + "' role='button' tabindex='0' data-hk='" + k + "'><div class='tags'><span class='num'>" + tr("change #{0}", k + 1) + "</span>" + tag + "</div>" +
       "<div class='hkd'><div><span class='side'>old</span>" + lines(o, g.oldLines) + "</div><div><span class='side'>new</span>" + lines(n, g.newLines) + "</div></div>" + ev + "</div>";
   }).join("") || "<p class='muted'>" + tr("no code changes") + "</p>";
 

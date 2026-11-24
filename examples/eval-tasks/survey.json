@@ -28,7 +28,7 @@
    "id": "review",
    "type": "choice",
    "text": "How often do you review code changes (diffs)?",
-   "text_ko": "코드 변경(diff)을 얼마나 자주 리뷰하나요?",
+   "text_ko": "코드 변경 사항을 얼마나 자주 리뷰하나요?",
    "options": [
     "never",
     "a few times a year",
