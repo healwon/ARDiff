@@ -70,7 +70,7 @@
    "id": "raw_help",
    "type": "scale",
    "text": "In the tasks with ONLY THE LINE DIFF, how much did it help you find and fix the problem?",
-   "text_ko": "줄 diff만 나왔던 과제에서, 줄 diff가 문제를 찾고 고치는 데 얼마나 도움이 되었나요?",
+   "text_ko": "line diff만 나왔던 과제에서, line diff가 문제를 찾고 고치는 데 얼마나 도움이 되었나요?",
    "low": "not at all",
    "high": "very much",
    "low_ko": "전혀",
@@ -88,7 +88,7 @@
    ],
    "options_ko": [
     "시각화",
-    "줄 diff만",
+    "line diff만",
     "차이 없음"
    ]
   },

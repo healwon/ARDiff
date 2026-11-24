@@ -223,11 +223,11 @@ var KO = {
   "ARDiff-lite against the spec: {0}": "ARDiff-lite spec 비교: {0}", " — e.g. {0}: should be {1}, is {2}": " — 예: {0} → {1}이어야 함, 지금은 {2}",
   "solved": "해결", "reset to the given new version": "처음 주어진 새 버전으로 되돌리기", "behaviour": "동작", "keep": "유지",
   "edit size: {0} tokens changed from the given new version (reference fix: {1})": "수정 크기: 주어진 새 버전에서 {0}토큰 변경 (참고 수정: {1})",
-  "Regression Repair Tasks": "회귀 수정 과제", "task": "과제", "fix the new version: remove the regression, keep the listed changes": "새 버전을 고치세요: 회귀는 없애고, 지정된 변경은 남기세요",
+  "task": "과제", "fix the new version: remove the regression, keep the listed changes": "새 버전을 고치세요: 회귀는 없애고, 지정된 변경은 남기세요",
   "fix the new version so that it behaves like the old one": "새 버전이 기존 버전처럼 동작하도록 고치세요",
   "old version (fixed)": "기존 버전 (수정 불가)", "new version (edit this)": "새 버전 (여기를 수정)", "◀ prev": "◀ 이전", "next ▶": "다음 ▶",
   "finish": "완료", "restart": "처음부터", "click again to restart": "한 번 더 누르면 처음부터", "see and submit your results": "결과를 보고 제출", "start over for a new participant": "새 참가자를 위해 처음부터",
-  "visualization": "시각화", "raw output": "raw output", "line diff": "줄 diff", "yes": "예", "no": "아니요",
+  "visualization": "시각화", "raw output": "raw output", "line diff": "line diff", "yes": "예", "no": "아니요",
   "Results": "결과", "participant ID": "참가자 ID", "active time": "활동 시간", "solved at": "해결 시점", "edits": "수정 횟수", "view": "화면",
   "Submit as a GitHub issue": "GitHub 이슈로 제출", "download JSON": "JSON 다운로드", "back to the tasks": "과제로 돌아가기",
   "RESULTS_INTRO": "수고하셨습니다! 과제별 결과입니다. 받은 참가자 ID가 있으면 입력한 뒤, GitHub 이슈로 제출하거나 JSON 파일로 저장하세요. <b>이슈는 공개됩니다.</b> GitHub에 로그인되어 있어야 하며, 새 탭에 내용이 모두 채워진 이슈 페이지가 열리면 <b>Submit new issue</b>만 누르면 됩니다.",
@@ -239,15 +239,15 @@ var KO = {
   "Before the tasks": "과제 전 설문", "After the tasks": "과제 후 설문", "A few questions about you first.": "먼저 몇 가지 질문에 답해 주세요.",
   "A few questions about the tasks you just did.": "방금 한 과제에 대해 몇 가지 질문에 답해 주세요.", "Continue": "계속",
   "TUT_NOTE_VIZ": "튜토리얼: 이 과제는 old와 new의 차이를 보여주는 <b>시각화</b> 화면입니다. 실제 과제 중 일부가 이렇게 나옵니다.",
-  "TUT_NOTE_RAW": "튜토리얼: 이 과제는 시각화 없이 코드에 표시된 <b>줄 diff</b>만 보여줍니다. 나머지 실제 과제가 이렇게 나옵니다.",
-  "TUTORIAL_NOTE": "<b>T1</b>, <b>T2</b>로 표시된 처음 두 과제는 같은 종류의 짧은 튜토리얼로, 하나는 시각화, 하나는 줄 diff만으로 풀어 봅니다. 결과에 포함되지 않습니다.",
+  "TUT_NOTE_RAW": "튜토리얼: 이 과제는 시각화 없이 코드에 표시된 <b>line diff</b>만 보여줍니다. 나머지 실제 과제가 이렇게 나옵니다.",
+  "TUTORIAL_NOTE": "<b>T1</b>, <b>T2</b>로 표시된 처음 두 과제는 같은 종류의 짧은 튜토리얼로, 하나는 시각화, 하나는 line diff만으로 풀어 봅니다. 결과에 포함되지 않습니다.",
   "SURVEY_NOTE": "과제 전과 후에 짧은 설문이 있습니다.",
   "edit either version — the analysis on the right updates as you type": "어느 버전이든 고치면 오른쪽 분석이 바로 바뀌어요", "old version": "기존 버전", "new version": "새 버전", "example": "예시"
 };
-var KO_START = '<h2>회귀 수정 과제</h2>' +
+var KO_START = '<h2>Regression Repair Tasks</h2>' +
   '<p>작은 Java 메서드 <b class="ntasks">4</b>개를 한 과제씩 고칩니다. 각 과제의 <b>새 버전</b>은 <b>기존 버전</b>을 읽기 쉽게 리팩터링한 것인데, 그 과정에서 실수로 일부 입력의 동작이 바뀌었습니다(회귀, regression).</p>' +
   '<p class="goalp">새 버전을 고쳐서 <b>모든 입력에서 기존 버전과 똑같은 결과</b>를 내게 하세요. <b>기존 버전을 그대로 복사해 넣지 말고</b>, 새 버전을 최소한으로 고치세요. 기존 버전은 고칠 수 없습니다. 위쪽 체크리스트가 입력하는 대로 두 버전이 같게 동작하는지 알려 주고, ' +
-  '<span class="chip eq">해결</span>이 뜨면 그 과제는 끝입니다. 어떤 과제는 두 버전의 차이를 보여주는 시각화가, 나머지 과제는 코드에 표시된 줄 diff만 나옵니다.</p>' +
+  '<span class="chip eq">해결</span>이 뜨면 그 과제는 끝입니다. 어떤 과제는 두 버전의 차이를 보여주는 시각화가, 나머지 과제는 코드에 표시된 line diff만 나옵니다.</p>' +
   '<p><b>이전</b> / <b>다음</b>으로 과제를 옮겨 다닐 수 있고, 고친 코드는 이 브라우저에 남아 다시 돌아와도 이어서 할 수 있습니다. 과제마다 걸린 시간을 측정합니다. ' +
   '다 마치면 오른쪽 위 <b>완료</b>를 눌러 결과를 확인하고 제출하세요.</p><button type="button" id="startbtn">시작</button>';
 // English text in, the current language out; {0}, {1}, … are filled with the remaining arguments
