@@ -1,8 +1,0 @@
-{
- "title": "Digit sum",
- "goal": "Old version: returns the sum of the decimal digits of n, and 0 for a negative n (123 → 6, 10 → 1, -123 → 0).\nNew version: a refactoring of the old version for readability (a for loop over the digits, with the last digit added after the loop) that accidentally changed its behaviour.\nGoal: change the new version so that it returns the same result as the old version for every input. Do not copy the old version over the new one; change the new version as little as possible.",
- "keep": [],
- "title_ko": "자릿수 합",
- "goal_ko": "기존 버전: n의 십진수 자릿수 합을 반환하고, n이 음수이면 0을 반환합니다 (123 → 6, 10 → 1, -123 → 0).\n새 버전: 읽기 쉽게 하려고 기존 버전을 리팩터링한 것(자릿수를 도는 for 루프로 바꾸고, 마지막 자리는 루프 뒤에서 더하기)인데, 실수로 동작이 바뀌었습니다.\n목표: 모든 입력에서 기존 버전과 같은 결과를 내도록 새 버전을 고치세요. 기존 버전을 그대로 복사해 넣지 말고, 새 버전을 최소한으로 고치세요.",
- "difficulty": "hard"
-}

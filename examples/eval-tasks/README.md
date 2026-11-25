@@ -6,14 +6,14 @@
 |---|---|---|---|
 | `Tutorial1` (T1, 시각화) | a에서 시작해 b가 더 크면 바꾸기 | 바꿀 때 `r = a`를 다시 넣음 | `r = b` |
 | `Tutorial2` (T2, line diff만) | 더 작은 값을 `smaller` 변수에 담기 | 비교가 뒤집힘 `b > smaller` | `<` |
-| `DigitSum` | `while`을 `for` 루프로, 마지막 자리는 루프 뒤에서 더함 | `m > 10`(10, 100 …에서 틀림), 음수면 마지막 자리를 부호째 더함 | `m > 9`, 양수일 때만 마지막 자리 더함 |
-| `MemberDiscount` | 할인을 하나의 퍼센트 `pct`로 모음 | `total * pct / 100`: 합계에서 한 번에 내림(old는 단가에서 할인마다) | 마지막 줄: 단가에서 할인마다 내림 |
+| `ParkingFee` | 요금 대상 시간을 먼저 구하고 요금 → 회원 할인 → 상한 순서로 계산 | 올림을 `billable / 10 + 1`로 바꿈(10분 단위로 딱 떨어지면 한 단위 더 냄), 회원 할인을 상한보다 먼저 적용(오래 주차한 회원이 더 냄) | `(billable + 9) / 10`, 상한을 회원 할인보다 먼저 |
+| `GradePoint` | if 사슬을 10점마다 1학점씩 계산하는 식으로 바꿈 | `(score - 60) / 10 + 1`: int 나눗셈이 0 쪽으로 버려서 51~59가 1이 됨, `score >= 100`을 범위 밖으로 봄(100이 -1) | `(score - 50) / 10`, `score > 100` |
 | `OvertimeRate` | 일반·초과 시간을 `Math.min` / `Math.max`로 나눔 | 1.5배를 한 번에 내림(old는 시간마다) | `over * (rate * 3 / 2)` |
 | `Shipping` | 배송비를 이름 붙인 부분으로 조립 | `total > 100`(100은 무료가 아니게 됨) | `>=` |
 | `AgeDiscount` | 조건에 이름을 붙여 할인 규칙 하나로 합침 | `senior = age > 65`(65세가 빠짐) | `>=` |
 | `LeapYear` | 중첩 if를 조건 하나로 합침 | `(year % 4 == 0 \|\| year % 400 == 0) && year % 100 != 0`: 400의 배수(2000 등)가 윤년이 아니게 됨 | `year % 4 == 0 && year % 100 != 0 \|\| year % 400 == 0` |
 
-**난이도(`task.json`의 `difficulty`):** 하 `Shipping`, `AgeDiscount` · 중 `OvertimeRate`, `LeapYear` · 상 `DigitSum`, `MemberDiscount`. 시각화 배정은 난이도마다 둘 중 하나를 무작위로 시각화, 다른 하나를 line diff로 해서 3:3으로 맞춥니다. 난이도는 참가자에게 보이지 않고 결과(이슈 표, JSON)에만 기록됩니다.
+**난이도(`task.json`의 `difficulty`):** 하 `Shipping`, `AgeDiscount` · 중 `OvertimeRate`, `LeapYear` · 상 `ParkingFee`, `GradePoint`. 시각화 배정은 난이도마다 둘 중 하나를 무작위로 시각화, 다른 하나를 line diff로 해서 3:3으로 맞춥니다. 난이도는 참가자에게 보이지 않고 결과(이슈 표, JSON)에만 기록됩니다.
 
 검증 (old와 비교, 넓은 범위 전수 실행 / ARDiff-lite):
 
@@ -21,8 +21,8 @@
 |---|---|---|
 | `Tutorial1` | 28920/58081 다름 · NOT EQUIVALENT | 0 다름 · EQUIVALENT |
 | `Tutorial2` | 57840/58081 다름 · NOT EQUIVALENT | 0 다름 · EQUIVALENT |
-| `DigitSum` | 2111/4001 다름 · NOT EQUIVALENT | 0 다름 · EQUIVALENT |
-| `MemberDiscount` | 8455/12558 다름 · NOT EQUIVALENT | 0 다름 · ARDiff-lite 판정 불가(테스트로 판단) |
+| `ParkingFee` | 1847/8204 다름 · NOT EQUIVALENT | 0 다름 · EQUIVALENT |
+| `GradePoint` | 10/701 다름 · NOT EQUIVALENT | 0 다름 · EQUIVALENT |
 | `OvertimeRate` | 2340/11193 다름 · NOT EQUIVALENT | 0 다름 · EQUIVALENT |
 | `Shipping` | 243/41553 다름 · NOT EQUIVALENT | 0 다름 · EQUIVALENT |
 | `AgeDiscount` | 90/13741 다름 · NOT EQUIVALENT | 0 다름 · EQUIVALENT |
