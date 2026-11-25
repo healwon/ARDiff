@@ -39,6 +39,7 @@ select:focus-visible,button:focus-visible,.ev:focus-visible,.hk:focus-visible{ou
 .note{font-size:12px;color:var(--muted)}
 .empty{border:1px dashed var(--rule);border-radius:8px;padding:14px 16px;color:var(--muted);font-size:13.5px}.empty code{font-family:var(--mono);font-size:12px}
 .err{border:1px solid var(--unk);color:var(--unk);border-radius:8px;padding:8px 10px;font-family:var(--mono);font-size:12.5px}
+.cardh{font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:-6px}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:8px;align-items:start}
 .hk{display:grid;gap:6px;background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:9px 11px;cursor:pointer}
 .hk.changes{box-shadow:inset 4px 0 0 var(--brk)}.hk.none{box-shadow:inset 4px 0 0 var(--id)}.hk.undone,.hk.together{box-shadow:inset 4px 0 0 var(--cmp)}.hk.isolate{box-shadow:inset 4px 0 0 var(--nof)}
@@ -96,7 +97,7 @@ svg.ov .fl{fill:none;stroke:var(--flow);stroke-width:1.3;opacity:.85}svg.ov .fl.
 .top .mode button+button{border-left:1px solid var(--rule)}.top .mode button[aria-pressed="true"]{background:var(--flowsoft);font-weight:600}
 .rawtests{display:none;margin:0;max-height:70vh;overflow:auto;font-family:var(--mono);font-size:11.5px;line-height:1.45;padding:8px 10px;border:1px solid var(--rule);border-radius:8px;background:var(--panel)}
 /* raw mode: only what the analyses printed, no visualization */
-body.rawmode #chips,body.rawmode #cards,body.rawmode #ins,body.rawmode #svw,body.rawmode #bar,body.rawmode #lg,body.rawmode .lite .rawb{display:none}
+body.rawmode #chips,body.rawmode #cardh,body.rawmode #cards,body.rawmode #ins,body.rawmode #svw,body.rawmode #bar,body.rawmode #lg,body.rawmode .lite .rawb{display:none}
 .rawtests,.lite pre.raw{font-variant-ligatures:none}
 body.rawmode .rawtests{display:block}body.rawmode .lite pre.raw{max-height:70vh}
 .ln-del{background:var(--del)}.ln-add{background:var(--add)}
@@ -190,6 +191,7 @@ body.evalpage.rawmode #lite,body.evalpage.rawmode #rawtests,body.evalpage .top .
     <div class="remote" id="remote" hidden></div>
     <div id="err" class="err" hidden></div>
     <div class="lite" id="lite" hidden></div>
+    <div class="cardh" id="cardh" hidden></div>
     <div class="cards" id="cards"></div>
     <div class="ins" id="ins"></div>
     <div class="svw" id="svw"><table id="tbl"></table><svg class="ov" aria-hidden="true"></svg></div>
@@ -233,7 +235,8 @@ var KO = {
   "matters only together with other changes": "다른 변경과 함께일 때만 의미 있음", "execution of the selected input": "선택한 입력의 실행 흐름", "runs diverge": "실행이 갈라지는 곳",
   "old and new differ": "old와 new가 다름", "old and new give the same results": "old와 new가 같은 결과", " (time limit)": " (시간 제한)",
   "inputs": "입력", "misses the spec": "spec과 다름", "as the spec": "spec과 같음", "differ": "다름", "same": "같음",
-  "result slice": "결과 슬라이스", "dim the lines the returned value does not depend on (through data or control)": "반환값이 (데이터나 제어로) 기대지 않는 줄을 흐리게",
+  "show only lines that affect the result": "반환값에 영향 주는 줄만 보기", "dim the lines that do not affect the returned value": "반환값에 영향을 주지 않는 줄을 흐리게 표시",
+  "Code changes": "코드 변경 사항", "no difference": "차이 없음", "real difference": "실제 차이", "false alarm": "가짜 차이", "refine L{0}": "L{0} 구체화",
   "click a line to see where its values come from": "줄을 누르면 그 값이 어디서 왔는지 보여요", "no code changes": "바뀐 코드 없음", "(none)": "(없음)",
   "running…": "실행 중…", "loading z3…": "z3 불러오는 중…", "unavailable: {0}": "사용할 수 없음: {0}",
   "raw z3 log": "z3 로그 원본", "original ARDiff raw output ↗": "원래 ARDiff 출력 원본 ↗",
@@ -590,8 +593,10 @@ function renderLite() {
   var steps = r.iterations.map(function (it) {
     var mark = it.status === "unsat" ? "u" : it.real ? "r" : "";
     var what = it.status === "unsat" ? "UNSAT" : it.status === "sat" ? (it.real ? "SAT · real" : "SAT · spurious") : it.status.toUpperCase();
-    return "<button type='button' class='it " + mark + "' data-it='" + it.iter + "' title='" + esc(what + " — " + it.abstracted.length + " statements abstracted" + (it.model ? " — model " + inputText(it.model) : "")) + "'>" + it.iter + " " + what + "</button>" +
-      (it.pick ? "<span class='arr'>refine L" + it.pick + " →</span>" : "");
+    // plain words on the button; the solver's own terms stay in the tooltip
+    var say = it.status === "unsat" ? tr("no difference") : it.status === "sat" ? (it.real ? tr("real difference") : tr("false alarm")) : it.status.toUpperCase();
+    return "<button type='button' class='it " + mark + "' data-it='" + it.iter + "' title='" + esc(what + " — " + it.abstracted.length + " statements abstracted" + (it.model ? " — model " + inputText(it.model) : "")) + "'>" + it.iter + " " + esc(say) + "</button>" +
+      (it.pick ? "<span class='arr'>" + tr("refine L{0}", it.pick) + " →</span>" : "");
   }).join("");
   box.innerHTML = "<div class='lh'><b title='abstraction-refinement with z3 running in this page; a re-implementation, not the original ARDiff'>ARDiff-lite</b><span class='chip " + cls + "'>" + esc(r.verdict) + "</span>" +
     (r.reason ? "<span class='muted'>" + esc(r.reason) + "</span>" : "") +
@@ -668,7 +673,7 @@ function poll() {
 
 function emptyState() {
   lite.token++; $("lite").hidden = true;
-  $("chips").innerHTML = ""; $("cards").innerHTML = ""; $("ins").innerHTML = ""; $("tbl").innerHTML = ""; $("bar").textContent = ""; $("rawtests").textContent = "";
+  $("chips").innerHTML = ""; $("cardh").hidden = true; $("cards").innerHTML = ""; $("ins").innerHTML = ""; $("tbl").innerHTML = ""; $("bar").textContent = ""; $("rawtests").textContent = "";
   $("remote").hidden = true; $("svw").hidden = true; $("lg").hidden = true; clearSvg(); clearMarks();
   $("err").hidden = false;
   $("err").className = "empty";
@@ -681,7 +686,7 @@ function render(o, n) {
 
   var chips = [];
   $("err").className = "err"; $("err").hidden = !res.error; $("svw").hidden = !!res.error; $("lg").hidden = !!res.error;
-  if (res.error) { $("err").textContent = res.error; $("chips").innerHTML = chips.join(""); $("cards").innerHTML = ""; $("ins").innerHTML = ""; $("tbl").innerHTML = ""; $("bar").textContent = ""; clearSvg(); clearMarks(); renderRawTests(); return; }
+  if (res.error) { $("err").textContent = res.error; $("chips").innerHTML = chips.join(""); $("cardh").hidden = true; $("cards").innerHTML = ""; $("ins").innerHTML = ""; $("tbl").innerHTML = ""; $("bar").textContent = ""; clearSvg(); clearMarks(); renderRawTests(); return; }
   var nd = res.diffIdx.length, N = res.inputs.length;
   chips.push("<span class='chip tchip " + (nd ? "neq" : "eq") + "'" + (liteDecided() ? " hidden" : "") + ">" +
              (nd ? tr("old and new differ") : tr("old and new give the same results")) + (res.capped ? tr(" (time limit)") : "") + "</span>");
@@ -690,6 +695,7 @@ function render(o, n) {
 
   runs = minimalRuns();
 
+  $("cardh").textContent = tr("Code changes"); $("cardh").hidden = false;
   $("cards").innerHTML = res.groups.map(function (g, k) {
     var lines = function (src, ls) { var a = src.split("\n"); return ls.length ? ls.map(function (l) { return "<code>" + esc(a[l - 1].trim()) + "</code>"; }).join("<br>") : "<span class='muted'>(none)</span>"; };
     var tag = "<span class='tag " + g.role + "'>" + esc(LABEL[g.role]) + (g.with && g.with.length ? " (" + g.with.map(function (j) { return tr("change #{0}", j + 1); }).join(", ") + ")" : "") + "</span>";
@@ -854,7 +860,7 @@ function paint() {
   bar.innerHTML = "<b>" + esc(inputText(inp)) + "</b> &nbsp; " + outText(ro.value, rn.value, miss, sv) +
     (sv !== undefined ? (miss ? " &nbsp; <span style='color:var(--neq)'>" + tr("misses the spec") + "</span>" : " &nbsp; <span class='muted'>" + tr("as the spec") + "</span>") :
      ro.value !== rn.value ? " &nbsp; <span style='color:var(--neq)'>" + tr("differ") + "</span>" : " &nbsp; <span class='muted'>" + tr("same") + "</span>") +
-    "<button type='button' class='slb' aria-pressed='" + st.slice + "' title='" + tr("dim the lines the returned value does not depend on (through data or control)") + "'>" + tr("result slice") + "</button>" +
+    "<button type='button' class='slb' aria-pressed='" + st.slice + "' title='" + tr("dim the lines that do not affect the returned value") + "'>" + tr("show only lines that affect the result") + "</button>" +
     " &nbsp; <span class='muted'>" + tr("click a line to see where its values come from") + "</span>";
   bar.querySelector(".slb").addEventListener("click", function () { st.slice = !st.slice; paint(); });
   draw();
