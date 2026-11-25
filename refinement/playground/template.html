@@ -254,7 +254,7 @@ var KO = {
   "differs from the old version, e.g. {0}: should be {1}, is {2}": "기존 버전과 다름. 예: {0} → {1}이어야 함, 지금은 {2}",
   "ARDiff-lite could not decide against the spec ({0}); the tests decide": "ARDiff-lite가 spec과 비교해 판정하지 못함 ({0}); 테스트 결과로 판단",
   "ARDiff-lite: equivalent to the spec": "ARDiff-lite: spec과 같음",
-  "ARDiff-lite against the spec: {0}": "ARDiff-lite spec 비교: {0}", " — e.g. {0}: should be {1}, is {2}": " — 예: {0} → {1}이어야 함, 지금은 {2}",
+  "ARDiff-lite against the spec: {0}": "ARDiff-lite spec 비교: {0}",
   "solved": "해결", "reset to the given new version": "처음 주어진 새 버전으로 되돌리기", "behaviour": "동작", "keep": "유지",
   "edit size: {0} tokens changed from the given new version (reference fix: {1})": "수정 크기: 주어진 새 버전에서 {0}토큰 변경 (참고 수정: {1})",
   "task": "과제", "fix the new version: remove the regression, keep the listed changes": "새 버전을 고치세요: 회귀는 없애고, 지정된 변경은 남기세요",
@@ -456,8 +456,7 @@ function renderTask() {
   items.push({ok: lv === null || lv === "UNKNOWN" ? "na" : lv === undefined ? "wait" : lv === "EQUIVALENT",
     txt: lv === null ? tr("ARDiff-lite unavailable here (it runs on the GitHub Pages version)") : lv === undefined ? trRef("ARDiff-lite against the spec: checking…") :
          lv === "UNKNOWN" ? trRef("ARDiff-lite could not decide against the spec ({0}); the tests decide", lite.spec.reason || "unknown") :
-         lv === "EQUIVALENT" ? trRef("ARDiff-lite: equivalent to the spec") : trRef("ARDiff-lite against the spec: {0}", lv) +
-         (lite.spec.counterexample ? tr(" — e.g. {0}: should be {1}, is {2}", inputText(lite.spec.counterexample.inputs), lite.spec.counterexample.old, lite.spec.counterexample.new) : "")});
+         lv === "EQUIVALENT" ? trRef("ARDiff-lite: equivalent to the spec") : trRef("ARDiff-lite against the spec: {0}", lv)});
   var keep = t.keep.map(function (k) {
     var ok = k.type === "contains" ? new RegExp(k.re).test(clean) : k.type === "absent" ? !new RegExp(k.re).test(clean) : k.type === "steps" ? runs && stepsOk(ex) : false;
     return {ok: ok, txt: tdesc(k)};
