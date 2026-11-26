@@ -13,8 +13,8 @@
 // local arrays have a fixed, constant size and an index out of bounds is an exception, as in Java.
 //
 // This is a re-implementation, not ARDiff: the summaries are functional (no per-path fresh variables) and the
-// statement to refine is the abstracted one closest to a change (ARDiff uses its heuristics H1-H3), so it can
-// differ from ARDiff's verdict.
+// abstraction is per statement (ARDiff: per variable of a block of common statements), so its heuristics H1-H3 are
+// applied to statements, and the verdict can still differ from ARDiff's.
 (function (root) {
 "use strict";
 var Engine = root.Engine;
@@ -361,20 +361,21 @@ var PRELUDE = "(define-fun jdiv ((a Int) (b Int)) Int (ite (>= a 0) (ite (> b 0)
 
 // ao / an: abstracted bodies of every method of each version ("name/arity" -> statements)
 function buildQuery(mo, mn, ao, an, ranges) {
-  var sym = new Sym(), envs = [];
+  var sym = new Sym(), envs = [], splitAt = 0;
   [[mo, ao], [mn, an]].forEach(function (p) {
     var env = {__done: ["Bool", "false"], __brk: ["Bool", "false"], __cont: ["Bool", "false"], __ret: ["Real", "ret_none"], __exc: ["Bool", "false"]}, sorts = {};
     p[0].params.forEach(function (q) { env[q.name] = [SORT[q.type], q.name]; sorts[q.name] = SORT[q.type]; });
     sym.methods = p[1]; sym.all = p[0].methods;
     sym.run(p[1][p[0].key], env, sorts);
     envs.push(env);
+    if (envs.length === 1) splitAt = sym.defs.length;
   });
   var decl = mo.params.map(function (q) { return "(declare-fun " + q.name + " () " + SORT[q.type] + ")\n"; }).join("") + "(declare-fun ret_none () Real)\n";
-  decl += mo.params.filter(function (q) { return q.type !== "Z"; }).map(function (q) {
+  var rng = mo.params.filter(function (q) { return q.type !== "Z"; }).map(function (q) {
     var r = ranges[q.name] || [MIN, MAX], num = function (v) { var t = q.type === "I" ? String(Math.abs(v)) : Math.abs(v).toFixed(1); return v < 0 ? "(- " + t + ")" : t; };
-    var lo = num(r[0]), hi = num(r[1]);
-    return "(assert (and (<= " + lo + " " + q.name + ") (<= " + q.name + " " + hi + ")))\n";
-  }).join("");
+    return "(and (<= " + num(r[0]) + " " + q.name + ") (<= " + q.name + " " + num(r[1]) + "))";
+  });
+  decl += rng.map(function (x) { return "(assert " + x + ")\n"; }).join("");
   Object.keys(sym.ufs).sort().forEach(function (n) { decl += "(declare-fun " + n + " (" + sym.ufs[n][0].join(" ") + ") " + sym.ufs[n][1] + ")\n"; });
   sym.defs.forEach(function (d) { decl += "(declare-fun " + d[0] + " () " + d[1] + ")\n(assert (= " + d[0] + " " + d[2] + "))\n"; });
   sym.assume.forEach(function (x) { decl += "(assert " + x + ")\n"; });
@@ -387,7 +388,91 @@ function buildQuery(mo, mn, ao, an, ranges) {
   return {smt: PRELUDE + decl + "(assert (not " + claim + "))\n(check-sat)\n" + (mo.params.length ? "(get-value (" + mo.params.map(function (q) { return q.name; }).join(" ") + "))\n" : ""),
           // ARDiff's satisfiability check: can the two versions agree at all, for some input and some meaning of the abstracted statements?
           agree: PRELUDE + decl + "(assert " + claim + ")\n(check-sat)\n",
-          vacuity: sym.assume.length ? PRELUDE + decl + "(check-sat)\n" : null, ufs: used, bounded: sym.bounded};
+          vacuity: sym.assume.length ? PRELUDE + decl + "(check-sat)\n" : null, ufs: used, bounded: sym.bounded,
+          occ: occurrences(sym, envs, splitAt), h1: function (f) { return h1Query(mo, sym, rng, claim, f); }};
+}
+
+// ---------------------------------------------------------------- ARDiff's refinement heuristics (GradDiff.getNextToRefine)
+function pr(t) { return Array.isArray(t) ? "(" + t.map(pr).join(" ") + ")" : t; }
+function ufApps(term, ufs, out) {
+  (function walk(t) {
+    if (Array.isArray(t)) { if (ufs[t[0]]) { out.push([t[0], pr(t)]); } t.forEach(walk); }
+    else if (ufs[t]) out.push([t, t]);
+  })(sexprs(term)[0]);
+  return out;
+}
+// how often each abstracted function is applied in the old and in the new summary (H2 compares these)
+function occurrences(sym, envs, splitAt) {
+  var count = function (terms) {
+    var c = {}; terms.forEach(function (x) { ufApps(x, sym.ufs, []).forEach(function (a) { c[a[0]] = (c[a[0]] || 0) + 1; }); }); return c;
+  };
+  var side = function (env, defs) { return defs.map(function (d) { return d[2]; }).concat([env.__ret[1], env.__exc[1]]); };
+  return {old: count(side(envs[0], sym.defs.slice(0, splitAt))), new: count(side(envs[1], sym.defs.slice(splitAt)))};
+}
+// H1: every application of an abstracted function becomes a constant; is there a value for the applications of f
+// that makes the two versions agree whatever the inputs and the other constants are?
+function h1Query(mo, sym, rng, claim, f) {
+  var consts = {}, n = 0;
+  var subst = function (term) {
+    var walk = function (t) {
+      if (Array.isArray(t)) { if (sym.ufs[t[0]]) return key(t[0], pr(t)); return t.map(walk); }
+      return sym.ufs[t] ? key(t, t) : t;
+    };
+    var key = function (fn, app) { if (!consts[app]) consts[app] = {name: "h1_" + (n++), fn: fn, sort: sym.ufs[fn][1]}; return consts[app].name; };
+    return pr(walk(sexprs(term)[0]));
+  };
+  var defs = sym.defs.map(function (d) { return "(= " + d[0] + " " + subst(d[2]) + ")"; });
+  var assume = sym.assume.map(subst), body = subst(claim);
+  var all = Object.keys(consts).map(function (k) { return consts[k]; });
+  if (!all.some(function (c) { return c.fn === f; })) return null;
+  var bound = mo.params.map(function (q) { return "(" + q.name + " " + SORT[q.type] + ")"; })
+    .concat(sym.defs.map(function (d) { return "(" + d[0] + " " + d[1] + ")"; }))
+    .concat(all.filter(function (c) { return c.fn !== f; }).map(function (c) { return "(" + c.name + " " + c.sort + ")"; }));
+  var pre = rng.concat(defs, assume);
+  return PRELUDE + "(declare-fun ret_none () Real)\n" +
+    all.filter(function (c) { return c.fn === f; }).map(function (c) { return "(declare-fun " + c.name + " () " + c.sort + ")\n"; }).join("") +
+    "(assert (forall (" + bound.join(" ") + ") " + (pre.length ? "(=> (and " + pre.join(" ") + ") " + body + ")" : body) + "))\n(check-sat)\n";
+}
+// H3: the simplest statement first: loops it is (1 for a loop), plus * and / and method calls in an assignment
+function h3Score(stmt, src) {
+  if (!stmt) return 0;
+  var loops = stmt.k === "loop" ? 1 : 0;
+  if (stmt.k !== "assign" && stmt.k !== "decl") return loops;
+  var text = Engine.stripComments(src.split("\n").slice(stmt.l0 - 1, stmt.l1).join("\n"));
+  return loops + (text.match(/[*\/]/g) || []).length + (text.match(/\b[A-Za-z_]\w*\s*\(/g) || []).length;
+}
+function findStmt(stmts, line) {
+  for (var i = 0; i < stmts.length; i++) {
+    var s = stmts[i];
+    if (s.l0 === line) return s;
+    var inner = [].concat(s.body || [], s.then ? [s.then] : [], s.els ? [s.els] : []);
+    if (s.k === "loop" && s.body) inner = [s.body];
+    var r = inner.length ? findStmt(inner, line) : null;
+    if (r) return r;
+  }
+  return null;
+}
+async function pickToRefine(q, rec, mo, oldSrc, z3eval) {
+  var stmtOf = function (fn) { var m = /_L(\d+)_\d+$/.exec(fn); return m ? +m[1] : null; };
+  var open = q.ufs.filter(function (fn) { var id = stmtOf(fn); return id !== null && rec.abstracted.indexOf(id) >= 0; });
+  var h1 = [], h2 = [];
+  // H1 (the functions of the old summary)
+  for (var i = 0; i < open.length; i++) {
+    if (!q.occ.old[open[i]]) continue;
+    var smt = q.h1(open[i]); if (!smt) continue;
+    var a = (await z3eval(smt)).trim().split("\n")[0];
+    if (a === "sat") h1.push(open[i]);
+  }
+  // H2: only in one summary, or applied a different number of times
+  open.forEach(function (fn) { if ((q.occ.old[fn] || 0) !== (q.occ.new[fn] || 0)) h2.push(fn); });
+  var cand = h1.concat(h2.filter(function (fn) { return h1.indexOf(fn) < 0; }));
+  if (!cand.length) cand = open;
+  // H3 over the statements of the candidates (ties: the earlier line)
+  var ids = []; cand.forEach(function (fn) { var id = stmtOf(fn); if (ids.indexOf(id) < 0) ids.push(id); });
+  var scores = {}; ids.forEach(function (id) { scores[id] = h3Score(findStmt(mo.stmts, id), oldSrc); });
+  ids.sort(function (x, y) { return scores[x] - scores[y] || x - y; });
+  rec.heuristics = {h1: h1, h2: h2, h3: scores};
+  return ids.length ? ids[0] : null;
 }
 
 // ---------------------------------------------------------------- z3 output
@@ -449,19 +534,15 @@ async function analyze(oldSrc, newSrc, z3eval, onStep, opts) {
       if (rec.agreeOut.split("\n")[0] === "unsat") { verdict = "NOT EQUIVALENT"; cex = {inputs: inputs, old: ro, new: rn}; rec.real = true; break; }
       rec.real = false;
     }
-    // refine: make one abstracted statement concrete again; prefer the ones the formula uses, closest to a change
-    var used = {}; q.ufs.forEach(function (n) { var m = /_L(\d+)_\d+$/.exec(n); if (m) used[m[1]] = 1; });
-    var cand = rec.abstracted.filter(function (id) { return used[id]; });
-    if (!cand.length) cand = rec.abstracted;
-    if (!cand.length) {
+    // refine: make one abstracted statement concrete again, chosen with ARDiff's heuristics H1, H2 and H3
+    var pick = await pickToRefine(q, rec, mo, oldSrc, z3eval);
+    if (pick === null) {
       if (status === "sat") { verdict = "NOT EQUIVALENT"; cex = {inputs: inputs, old: rec.run[0], new: rec.run[1]}; rec.real = true; }
       else { verdict = "UNKNOWN"; reason = "z3: " + status; }
       break;
     }
-    var dist = function (id) { return Math.min.apply(null, changed.map(function (c) { return Math.abs(c - id); }).concat([1e9])); };
-    cand.sort(function (a, b) { return dist(a) - dist(b) || a - b; });
-    rec.pick = cand[0];
-    concrete[cand[0]] = true;
+    rec.pick = pick;
+    concrete[pick] = true;
     if (onStep) onStep(rec);
   }
   if (!verdict) { verdict = "UNKNOWN"; reason = "too many refinement steps"; }
