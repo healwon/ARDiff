@@ -2,9 +2,9 @@
 //
 //   1. common code is abstracted as in ARDiff: consecutive unchanged statements form a block, and every variable a
 //      block writes becomes UF_<var>_B<block>(the block's inputs it depends on); both versions use the same UFs
-//   2. each version is executed symbolically path by path (as Symbolic PathFinder does: loops up to 5 iterations,
-//      ints as mathematical integers, Java / and %, inputs -100..100 unless the task says otherwise); its summary
-//      is the disjunction over its paths of (path condition and Ret = the returned value), and z3 is asked, as in
+//   2. each version is executed symbolically path by path, as Symbolic PathFinder does: at most 5 branches on the
+//      inputs per path (ARDiff's default bound, SPF's search.depth_limit), ints as mathematical integers, Java / and %,
+//      inputs -100..100 unless the task says otherwise. Its summary is the disjunction over its paths of (path condition and Ret = the returned value), and z3 is asked, as in
 //      ARDiff, for summaryOld and not (summaryOld = summaryNew)
 //   3. unsat -> EQUIVALENT. sat -> with nothing abstracted, NOT EQUIVALENT; otherwise z3 is asked whether
 //      summaryOld and summaryOld = summaryNew can hold (for some input and some meaning of the abstracted blocks):
@@ -21,7 +21,7 @@
 (function (root) {
 "use strict";
 var Engine = root.Engine;
-var UNROLL = 5, MAX_PATHS = 4000, MAX_SUMMARY = 400000, H1_TIMEOUT = 2000, MIN = -100, MAX = 100, MAX_TERM = 200, TIME_LIMIT = 90000;
+var UNROLL = 5, BOUND = 5, ITER_CAP = 10000, MAX_PATHS = 4000, MAX_SUMMARY = 400000, H1_TIMEOUT = 2000, MIN = -100, MAX = 100, MAX_TERM = 200, TIME_LIMIT = 90000;
 
 function rangeText(mo, ranges) {
   var own = mo.params.filter(function (q) { return ranges[q.name]; });
@@ -339,16 +339,70 @@ Sym.prototype = {
       if (done !== "false") Object.keys(env).forEach(function (v) { if (v in before && env[v] !== before[v]) env[v] = self.iteVal(done, before[v], env[v]); });
     });
   },
-  // ---- path by path, as Symbolic PathFinder explores the method: a state is {env, sorts, pc: [conditions], stop}
-  // where stop is null, "ret", "brk" or "cont". A branch forks the state; a loop runs at most UNROLL iterations and a
-  // path that would run more is dropped (like a depth bound), so the summary only describes the paths within it.
+  // ---- path by path, as Symbolic PathFinder explores the method. A state is {env, sorts, pc: [conditions], stop,
+  // depth} where stop is null, "ret", "brk" or "cont". A condition that depends on the inputs (or on an abstracted
+  // block) forks the state and counts one step of depth; && and || are separate branches, as in the bytecode. A
+  // condition on constants is just evaluated, so a loop with a fixed count runs as such. Like SPF's
+  // search.depth_limit (ARDiff's bound, 5 by default), a path that would take more symbolic branches is dropped,
+  // so the summary only describes the paths within the bound.
   paths: function (stmts, env, sorts) {
-    this.npaths = 0;
-    return this.execList(stmts, [{env: env, sorts: sorts, pc: [], stop: null}]);
+    this.npaths = 0; this.gmemo = {}; this.defIx = {};
+    var self = this; this.defs.forEach(function (d, k) { self.defIx[d[0]] = k; });
+    return this.execList(stmts, [{env: env, sorts: sorts, pc: [], stop: null, depth: 0}]);
   },
   fork: function (st, cond) {
     if (++this.npaths > MAX_PATHS) throw new Unsupported("more than " + MAX_PATHS + " paths");
-    return {env: Object.assign({}, st.env), sorts: Object.assign({}, st.sorts), pc: cond ? st.pc.concat([cond]) : st.pc.slice(), stop: st.stop};
+    return {env: Object.assign({}, st.env), sorts: Object.assign({}, st.sorts), pc: st.pc.concat([cond]), stop: st.stop, depth: st.depth + 1};
+  },
+  // the value of a term without symbols (numbers, and definitions of such), or undefined
+  ground: function (term) {
+    var self = this;
+    var num = function (x) { return /^-?\d+(\.\d+)?$/.test(x) ? +x : undefined; };
+    function g(t) {
+      if (!Array.isArray(t)) {
+        if (t === "true") return true; if (t === "false") return false;
+        if (num(t) !== undefined) return num(t);
+        if (/^d\d+$/.test(t)) {
+          if (!(t in self.gmemo)) { var k = self.defIx[t]; if (k === undefined) { k = self.defs.findIndex(function (d) { return d[0] === t; }); if (k < 0) throw 0; self.defIx[t] = k; } self.gmemo[t] = g(sexprs(self.defs[k][2])[0]); }
+          return self.gmemo[t];
+        }
+        throw 0;
+      }
+      var op = t[0];
+      if (op === "ite") return g(t[1]) ? g(t[2]) : g(t[3]);
+      var a = t.slice(1).map(g), x = a[0], y = a[1];
+      switch (op) {
+        case "-": return a.length === 1 ? -x : x - y;
+        case "+": return a.reduce(function (p, q) { return p + q; });
+        case "*": return a.reduce(function (p, q) { return p * q; });
+        case "/": if (y === 0) throw 0; return x / y;
+        case "jdiv": if (y === 0) throw 0; return Math.trunc(x / y);
+        case "jmod": if (y === 0) throw 0; return x - y * Math.trunc(x / y);
+        case "to_real": return x;
+        case "jtrunc": return Math.trunc(x);
+        case "<": return x < y; case "<=": return x <= y; case ">": return x > y; case ">=": return x >= y;
+        case "=": return x === y;
+        case "not": return !x;
+        case "and": return a.every(Boolean); case "or": return a.some(Boolean); case "xor": return x !== y;
+      }
+      throw 0;
+    }
+    try { var v = g(sexprs(term)[0]); return typeof v === "number" && !isFinite(v) ? undefined : v; } catch (e) { return undefined; }
+  },
+  // the states after a branch on e: [state, whether e held]
+  forkCond: function (e, st) {
+    var self = this, out = [];
+    if (e[0] === "bin" && (e[1] === "&&" || e[1] === "||")) {
+      this.forkCond(e[2], st).forEach(function (r) {
+        if (e[1] === "&&" ? !r[1] : r[1]) out.push(r); else out.push.apply(out, self.forkCond(e[3], r[0]));
+      });
+      return out;
+    }
+    if (e[0] === "not") return this.forkCond(e[1], st).map(function (r) { return [r[0], !r[1]]; });
+    var c = this.ev(e, st.env, st.sorts)[1], g = this.ground(c);
+    if (g === true || g === false) return [[st, g]];
+    if (st.depth >= (this.bound || BOUND)) { this.cut = true; return []; }
+    return [[this.fork(st, c), true], [this.fork(st, "(not " + c + ")"), false]];
   },
   execList: function (stmts, states) {
     var self = this;
@@ -360,26 +414,24 @@ Sym.prototype = {
     return states;
   },
   execStmt: function (s, st) {
-    var self = this, c;
+    var self = this;
     if (!s) return [st];
     switch (s.k) {
       case "block": return this.execList(s.body, [st]);
       case "if":
-        c = this.ev(s.cond, st.env, st.sorts)[1];
-        var a = this.fork(st, c), b = this.fork(st, "(not " + c + ")");
-        return this.execList([s.then], [a]).concat(s.els ? this.execList([s.els], [b]) : [b]);
+        var res = [];
+        this.forkCond(s.cond, st).forEach(function (r) {
+          res.push.apply(res, r[1] ? self.execList([s.then], [r[0]]) : s.els ? self.execList([s.els], [r[0]]) : [r[0]]);
+        });
+        return res;
       case "loop":
-        this.bounded = true;
-        var out = [], live;
+        var out = [], live, n = 0;
         if (s.init) this.step(s.init, st.env, st.sorts);
         live = s.isDo ? this.loopBody(s, [st], out) : [st];
-        for (var i = 0; i <= UNROLL && live.length; i++) {
+        while (live.length) {
+          if (++n > ITER_CAP) throw new Unsupported("a loop runs more than " + ITER_CAP + " times");
           var go = [];
-          live.forEach(function (x) {
-            var cc = self.ev(s.cond, x.env, x.sorts)[1];
-            out.push(self.fork(x, "(not " + cc + ")"));
-            if (i < UNROLL) go.push(self.fork(x, cc));
-          });
+          live.forEach(function (x) { self.forkCond(s.cond, x).forEach(function (r) { (r[1] ? go : out).push(r[0]); }); });
           live = this.loopBody(s, go, out);
         }
         return out;
@@ -520,8 +572,9 @@ var PRELUDE = "(define-fun jdiv ((a Int) (b Int)) Int (ite (>= a 0) (ite (> b 0)
 // ao / an: abstracted bodies of every method of each version ("name/arity" -> statements)
 // Each version's summary is, as in ARDiff, the disjunction over its paths of (path condition and the returned value):
 // Ret = the value, plus Exc = whether the path throws. ARDiff's query is summaryOld and not (summaryOld = summaryNew).
-function buildQuery(mo, mn, ao, an, ranges) {
+function buildQuery(mo, mn, ao, an, ranges, bound) {
   var sym = new Sym(), sums = [], apps = [], merged = [];
+  sym.bound = bound;
   [[mo, ao], [mn, an]].forEach(function (p) {
     var env = {__done: ["Bool", "false"], __brk: ["Bool", "false"], __cont: ["Bool", "false"], __ret: ["Real", "ret_none"], __exc: ["Bool", "false"]}, sorts = {};
     p[0].params.forEach(function (q) { env[q.name] = [SORT[q.type], q.name]; sorts[q.name] = SORT[q.type]; });
@@ -561,7 +614,7 @@ function buildQuery(mo, mn, ao, an, ranges) {
   return {smt: PRELUDE + decl + "(assert " + sums[0] + ")\n(assert (not " + same + "))\n(check-sat)\n" + (mo.params.length ? "(get-value (" + mo.params.map(function (q) { return q.name; }).join(" ") + "))\n" : ""),
           // ARDiff's satisfiability check (DSE.checkForSatisfiability): summaryOld and summaryOld = summaryNew
           agree: PRELUDE + decl + "(assert " + sums[0] + ")\n(assert " + same + ")\n(check-sat)\n",
-          noPaths: sums[0] === "false" || sums[1] === "false", ufs: used, bounded: sym.bounded, merged: merged,
+          noPaths: sums[0] === "false" || sums[1] === "false", ufs: used, bounded: sym.bounded, cut: sym.cut, merged: merged,
           // with a merged summary (or a loop in an inlined callee) the loop bound is an assumption on the inputs:
           // if no input meets it, an unsat query says nothing
           vacuity: sym.assume.length ? PRELUDE + decl + "(check-sat)\n" : null,
@@ -656,7 +709,7 @@ function value(x) {
 // ---------------------------------------------------------------- the loop
 // opts.ranges: {param: [lo, hi]} for the inputs to consider (default -100..100 for every number, as in ARDiff)
 async function analyze(oldSrc, newSrc, z3eval, onStep, opts) {
-  var ranges = (opts && opts.ranges) || {};
+  var ranges = (opts && opts.ranges) || {}, bound = (opts && opts.bound) || BOUND;      // opts.bound: like ARDiff's --b
   var mo = Engine.parseMethod(oldSrc), mn = Engine.parseMethod(newSrc);
   var maps = lineMaps(oldSrc, newSrc), oldLines = oldSrc.split("\n");
   var changed = []; for (var l = 1; l <= oldLines.length; l++) if (!maps.o2n[l] && !maps.blankOld[l - 1]) changed.push(l);
@@ -673,7 +726,7 @@ async function analyze(oldSrc, newSrc, z3eval, onStep, opts) {
       Object.keys(m.methods).forEach(function (k) { out[k] = abstract(m.methods[k].stmts, side, maps, concrete, seen, m.methods, sizeVars(m.methods[k].stmts), side === "old" ? pairsNew : pairsOld, k === m.key ? blocks : null); });
       return out;
     };
-    var q = buildQuery(mo, mn, absAll(mo, "old"), absAll(mn, "new"), ranges), out;
+    var q = buildQuery(mo, mn, absAll(mo, "old"), absAll(mn, "new"), ranges, bound), out;
     try { out = (await z3eval(q.smt)).trim(); } catch (e) { verdict = "UNKNOWN"; reason = "z3 failed: " + (e.message || e); break; }
     var status = out.split("\n")[0].trim();
     var rec = {iter: it, merged: q.merged, abstracted: Object.keys(seen).map(Number).sort(function (a, b) { return a - b; }), status: status, bounded: q.bounded,
@@ -681,8 +734,9 @@ async function analyze(oldSrc, newSrc, z3eval, onStep, opts) {
     iters.push(rec);
     if (status === "unsat") {
       if (q.vacuity) { rec.vacuity = q.vacuity; rec.vacuityOut = (await z3eval(q.vacuity)).trim(); }
-      if (q.noPaths || (q.vacuity && rec.vacuityOut.split("\n")[0] !== "sat")) { verdict = "UNKNOWN"; reason = "every input runs a loop more than " + UNROLL + " times"; }
-      else { verdict = "EQUIVALENT"; reason = "for inputs in " + rangeText(mo, ranges) + (q.bounded ? ", loops up to " + UNROLL + " iterations" : ""); }
+      if (q.noPaths) { verdict = "UNKNOWN"; reason = "every path takes more than " + bound + " branches on the inputs (ARDiff's bound)"; }
+      else if (q.vacuity && rec.vacuityOut.split("\n")[0] !== "sat") { verdict = "UNKNOWN"; reason = "every input runs a loop more than " + UNROLL + " times"; }
+      else { verdict = "EQUIVALENT"; reason = "for inputs in " + rangeText(mo, ranges) + (q.cut ? ", on the paths with up to " + bound + " branches on the inputs" : "") + (q.merged && q.merged.length && q.bounded ? ", loops up to " + UNROLL + " iterations" : ""); }
       break;
     }
     var inputs = null;

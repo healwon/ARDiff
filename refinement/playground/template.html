@@ -321,6 +321,8 @@ function ttitle(t) { return LANG === "ko" && t.title_ko ? t.title_ko : t.title; 
 function tgoal(t) { return LANG === "ko" && t.goal_ko ? t.goal_ko : t.goal; }
 // the inputs a task considers (task.json "inputs": {param: [lo, hi]}), e.g. only positive years
 function taskRanges() { var t = EVAL && curEx !== null && EX[curEx] && EVAL[EX[curEx].name]; return (t && t.inputs) || undefined; }
+// ARDiff's bound for a task (task.json "bound", like --b): how many branches on the inputs a path may take
+function taskBound() { var t = EVAL && curEx !== null && EX[curEx] && EVAL[EX[curEx].name]; return (t && t.bound) || undefined; }
 function tdesc(k) { return LANG === "ko" && k.desc_ko ? k.desc_ko : k.desc; }      // evaluation tasks: {name: {title, goal, keep: [checks], refTokens}} on eval.html
 var REPO = /*__REPO__*/"";
 // starting point: one method in each class, identical; edit either side
@@ -542,12 +544,12 @@ function runLite(o, n) {
     z3().then(function (ev) {
       if (my !== lite.token) return;
       box.querySelector(".muted").textContent = tr("running…");
-      return ArdiffLite.analyze(o, n, ev, null, {ranges: taskRanges()}).then(function (r) {
+      return ArdiffLite.analyze(o, n, ev, null, {ranges: taskRanges(), bound: taskBound()}).then(function (r) {
         if (my !== lite.token) return;
         lite.result = r; renderLite();
         // the task page also asks whether the edit matches the spec (old plus only the intended change)
         if (EVAL && !taskSpec()) { lite.spec = r; renderSpecCex(); renderTask(); return; }
-        if (EVAL && taskSpec()) return ArdiffLite.analyze(taskSpec(), n, ev, null, {ranges: taskRanges()}).then(function (q) { if (my === lite.token) { lite.spec = q; renderSpecCex(); renderTask(); var rp = document.querySelector(".lite pre.raw"); if (rp && showRaw()) rp.textContent = rawLog(); } });
+        if (EVAL && taskSpec()) return ArdiffLite.analyze(taskSpec(), n, ev, null, {ranges: taskRanges(), bound: taskBound()}).then(function (q) { if (my === lite.token) { lite.spec = q; renderSpecCex(); renderTask(); var rp = document.querySelector(".lite pre.raw"); if (rp && showRaw()) rp.textContent = rawLog(); } });
       });
     }).catch(function (e) { if (my === lite.token) { lite.error = e.message || String(e); renderLite(); } });
   }, 500);

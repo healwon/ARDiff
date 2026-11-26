@@ -4,6 +4,8 @@
 
 `task.json`의 `inputs`(예: LeapYear의 `{"year": [1, 3000]}`)를 주면 그 매개변수는 테스트 입력, 시각화의 입력, ARDiff-lite의 범위가 모두 그 안으로 제한됩니다. 없으면 ARDiff처럼 -100..100입니다.
 
+`task.json`의 `bound`는 ARDiff의 `--b`와 같습니다. ARDiff-lite가 경로 하나에서 따라가는 입력에 따른 분기의 최대 수이고, 기본값은 ARDiff처럼 5입니다. 이보다 깊은 경로는 검사하지 않습니다. GradePoint는 기존 버전의 if-else가 6단계라서 `"bound": 6`입니다.
+
 | task | 리팩터링 (의도) | 생긴 회귀 | 참고 수정 (`fixedV`) |
 |---|---|---|---|
 | `Tutorial1` (T1, 시각화) | a에서 시작해 b가 더 크면 바꾸기 | 바꿀 때 `r = a`를 다시 넣음 | `r = b` |
