@@ -566,6 +566,7 @@ function liteLog(r, a, b) {
       it.smt + "\n; ----- z3 -----\n" + it.out + "\n";
     if (it.vacuity) s += "; ----- loop-bound check -----\n" + it.vacuity + "\n; ----- z3 -----\n" + it.vacuityOut + "\n";
     if (it.run) s += "; model: " + inputText(it.model) + " (on the real code: " + a + " " + it.run[0] + ", " + b + " " + it.run[1] + ")\n";
+    if (it.merged && it.merged.length) s += "; too many paths in " + it.merged.join(" and ") + ": summarized with its branches merged instead of path by path\n";
     if (it.agreeOut) s += "; can the two versions agree for some meaning of the abstracted statements? z3: " + it.agreeOut.split("\n")[0] + (it.real ? " -> NOT EQUIVALENT" : " -> refine") + "\n";
     if (it.heuristics) s += "; refine heuristics: H1 [" + it.heuristics.h1.join(", ") + "], H2 [" + it.heuristics.h2.join(", ") + "], H3 scores " + JSON.stringify(it.heuristics.h3) + "\n";
     if (it.pick) s += "; refine: line " + it.pick + " made concrete\n";

@@ -1,24 +1,27 @@
 // ARDiff-lite: ARDiff's abstraction-refinement loop re-implemented for the browser (needs engine.js and a z3 "eval").
 //
-//   1. statements that are the same in old and new (by line diff) are abstracted: each becomes
-//      `x = UF_x_L<line>(variables it reads)`; the matching statement in the other version uses the same UF
-//   2. both versions are executed symbolically (loops unrolled, ints as mathematical integers, Java / and %)
-//      and z3 is asked whether their results can differ (inputs bounded like ARDiff: -100..100)
-//   3. unsat -> EQUIVALENT. sat -> as in ARDiff: with nothing abstracted, NOT EQUIVALENT; otherwise z3 is asked whether
-//      the two versions can agree at all (for some input and some meaning of the abstracted statements): if not,
-//      NOT EQUIVALENT; if so, one abstracted statement is made concrete again (refinement) and we go back to 2.
-//      The model's inputs are reported as the counterexample; they are not run on the real code to decide.
+//   1. common code is abstracted as in ARDiff: consecutive unchanged statements form a block, and every variable a
+//      block writes becomes UF_<var>_B<block>(the block's inputs it depends on); both versions use the same UFs
+//   2. each version is executed symbolically path by path (as Symbolic PathFinder does: loops up to 5 iterations,
+//      ints as mathematical integers, Java / and %, inputs -100..100 unless the task says otherwise); its summary
+//      is the disjunction over its paths of (path condition and Ret = the returned value), and z3 is asked, as in
+//      ARDiff, for summaryOld and not (summaryOld = summaryNew)
+//   3. unsat -> EQUIVALENT. sat -> with nothing abstracted, NOT EQUIVALENT; otherwise z3 is asked whether
+//      summaryOld and summaryOld = summaryNew can hold (for some input and some meaning of the abstracted blocks):
+//      if not, NOT EQUIVALENT; if so, one abstracted statement is made concrete again (refinement), chosen with
+//      ARDiff's heuristics H1-H3, and we go back to 1. The model's inputs are reported as the counterexample; they
+//      are not run on the real code to decide.
 //
 // Calls to other methods of the class are inlined (their common statements are abstracted the same way);
 // local arrays have a fixed, constant size and an index out of bounds is an exception, as in Java.
 //
-// This is a re-implementation, not ARDiff: the summaries are functional (no per-path fresh variables) and the
-// abstraction is per statement (ARDiff: per variable of a block of common statements), so its heuristics H1-H3 are
-// applied to statements, and the verdict can still differ from ARDiff's.
+// This is a re-implementation, not ARDiff: the Java front end, the solver tactics and the tie-breaking of H3
+// differ, and expressions such as Math.min or ?: stay terms instead of forking paths, so the steps and even the
+// verdict can still differ from ARDiff's.
 (function (root) {
 "use strict";
 var Engine = root.Engine;
-var UNROLL = 10, MIN = -100, MAX = 100, MAX_TERM = 200, TIME_LIMIT = 90000;
+var UNROLL = 5, MAX_PATHS = 4000, MAX_SUMMARY = 400000, H1_TIMEOUT = 2000, MIN = -100, MAX = 100, MAX_TERM = 200, TIME_LIMIT = 90000;
 
 function rangeText(mo, ranges) {
   var own = mo.params.filter(function (q) { return ranges[q.name]; });
@@ -105,23 +108,109 @@ function sizeVars(node, out) {
   else if (node && typeof node === "object") for (var k in node) if (node[k] && typeof node[k] === "object") sizeVars(node[k], out);
   return out;
 }
-function abstract(stmts, side, maps, concrete, seen, methods, keep) {
-  keep = keep || {};
-  return stmts.map(function (s) {
-    var id = commonId(s, side, maps);
-    if (id !== null && !concrete[id] && !hasReturn(s) && Object.keys(varsDefined(s)).length && !opaque(s, methods) &&
-        !Object.keys(varsDefined(s)).some(function (v) { return keep[v]; })) {
-      seen[id] = seen[id] || {line: id, text: null, side: side};
-      // an if or a loop may leave a variable it writes unchanged, so that variable's current value is an input too
-      var defs = varsDefined(s), reads = varsRead(s);
-      if (s.k !== "assign" && s.k !== "decl") Object.keys(defs).forEach(function (v) { reads[v] = 1; });
-      return {k: "uf", id: id, defs: defs, reads: reads, l0: s.l0, l1: s.l1};
-    }
-    if (s.k === "block") return Object.assign({}, s, {body: abstract(s.body, side, maps, concrete, seen, methods, keep)});
-    if (s.k === "if") return Object.assign({}, s, {then: abstract([s.then], side, maps, concrete, seen, methods, keep)[0], els: s.els ? abstract([s.els], side, maps, concrete, seen, methods, keep)[0] : null});
-    if (s.k === "loop") return Object.assign({}, s, {body: abstract([s.body], side, maps, concrete, seen, methods, keep)[0]});
-    return s;
+// ---------------------------------------------------------------- common blocks (ARDiff's CommonBlockExtractor)
+// Consecutive common statements at the same level form a block; a control statement goes into a block whole when
+// nothing inside it is changed (or refined) and it has no return; otherwise it stays concrete and the statements
+// inside it form blocks of their own. Each variable a block writes becomes UF_<var>_B<block>(the block's inputs that
+// variable depends on). Statements are identified by their old line on both sides, and two statements are in the
+// same block only when they are next to each other in both versions.
+function adjacentPairs(stmts, side, maps, out) {
+  out = out || {};
+  var ids = stmts.map(function (s) { return commonId(s, side, maps); });
+  for (var i = 0; i + 1 < ids.length; i++) if (ids[i] !== null && ids[i + 1] !== null) out[ids[i] + ">" + ids[i + 1]] = 1;
+  stmts.forEach(function (s) {
+    if (s.k === "block") adjacentPairs(s.body, side, maps, out);
+    else if (s.k === "if") { adjacentPairs([s.then], side, maps, out); if (s.els) adjacentPairs([s.els], side, maps, out); }
+    else if (s.k === "loop") adjacentPairs([s.body], side, maps, out);
   });
+  return out;
+}
+// lines (old numbering) a statement spans that are refined
+function touchesConcrete(s, side, maps, concrete) {
+  for (var l = s.l0; l <= s.l1; l++) { var id = side === "old" ? l : maps.n2o[l]; if (id !== undefined && concrete[id]) return true; }
+  return false;
+}
+// per variable a block writes: the block's inputs it depends on (data and control), like ARDiff's def-use chains
+function blockDeps(stmts) {
+  var D = {};
+  var src = function (vars, ctx) { var out = Object.assign({}, ctx); Object.keys(vars).forEach(function (v) { if (D[v]) Object.assign(out, D[v]); else out[v] = 1; }); return out; };
+  function walk(list, ctx) {
+    list.forEach(function (s) {
+      if (!s) return;
+      if (s.k === "block") return walk(s.body, ctx);
+      if (s.k === "if") {
+        var c = src(varsRead(s.cond), ctx), before = Object.assign({}, D), defs = varsDefined(s);
+        walk([s.then], c); var afterThen = D; D = Object.assign({}, before); walk([s.els], c);
+        var afterElse = D; D = Object.assign({}, before);
+        Object.keys(defs).forEach(function (v) { D[v] = Object.assign({}, c, afterThen[v] || {}, afterElse[v] || {}, before[v] || (defs[v] ? {} : {[v]: 1})); });
+        return;
+      }
+      if (s.k === "loop") {
+        if (s.init) walk([s.init], ctx);
+        var defs2 = varsDefined(s), prev = null;
+        for (var k = 0; k < 8 && JSON.stringify(D) !== prev; k++) {
+          prev = JSON.stringify(D);
+          var c2 = src(varsRead(s.cond), ctx), was = Object.assign({}, D);
+          walk([s.body], c2); if (s.upd) walk([s.upd], c2);
+          Object.keys(defs2).forEach(function (v) { D[v] = Object.assign({}, D[v] || {}, was[v] || {}, c2, src(varsRead(s.cond), {})); if (!was[v] && !defs2[v]) D[v][v] = 1; });
+        }
+        return;
+      }
+      var reads = varsRead(s), defs3 = varsDefined(s), r = src(reads, ctx);
+      Object.keys(defs3).forEach(function (v) { D[v] = Object.assign({}, r); });
+    });
+  }
+  walk(stmts, {});
+  return D;
+}
+// the statements of a block that write each variable, with how many loops (inside the block) they sit in, for H3
+function blockLines(stmts, side, maps) {
+  var out = {};
+  (function walk(list, loops) {
+    list.forEach(function (s) {
+      if (!s) return;
+      if (s.k === "block") return walk(s.body, loops);
+      if (s.k === "if") { walk([s.then], loops); walk([s.els], loops); return; }
+      if (s.k === "loop") { if (s.init) walk([s.init], loops + 1); walk([s.body], loops + 1); if (s.upd) walk([s.upd], loops + 1); return; }
+      var id = side === "old" ? s.l0 : maps.n2o[s.l0];
+      Object.keys(varsDefined(s)).forEach(function (v) { (out[v] = out[v] || []).push({line: id, loops: loops, stmt: s}); });
+    });
+  })(stmts, 0);
+  return out;
+}
+function abstract(stmts, side, maps, concrete, seen, methods, keep, pairs, blocks) {
+  keep = keep || {};
+  var out = [], run = [];
+  var ok = function (s) {
+    var defs = varsDefined(s);
+    return commonId(s, side, maps) !== null && !touchesConcrete(s, side, maps, concrete) && !hasReturn(s) && !opaque(s, methods) &&
+      !Object.keys(defs).some(function (v) { return keep[v]; });
+  };
+  var flush = function () {
+    if (!run.length) return;
+    var defs = {}; run.forEach(function (s) { varsDefined(s, defs); });
+    if (!Object.keys(defs).length) { out.push.apply(out, run); run = []; return; }
+    var id = commonId(run[0], side, maps);
+    // every line of the block counts as abstracted (for the view); the block is known by its first statement
+    run.forEach(function (s) { for (var l = s.l0; l <= s.l1; l++) { var o = side === "old" ? l : maps.n2o[l]; if (o !== undefined) seen[o] = seen[o] || {line: o, side: side}; } });
+    if (blocks && side === "old") blocks[id] = blockLines(run, side, maps);
+    out.push({k: "uf", id: id, defs: defs, deps: blockDeps(run), l0: run[0].l0, l1: run[run.length - 1].l1});
+    run = [];
+  };
+  stmts.forEach(function (s) {
+    if (ok(s)) {
+      // stay in the current block only if the previous statement is right before this one in the other version too
+      if (run.length && !pairs[commonId(run[run.length - 1], side, maps) + ">" + commonId(s, side, maps)]) flush();
+      run.push(s); return;
+    }
+    flush();
+    if (s.k === "block") out.push(Object.assign({}, s, {body: abstract(s.body, side, maps, concrete, seen, methods, keep, pairs, blocks)}));
+    else if (s.k === "if") out.push(Object.assign({}, s, {then: abstract([s.then], side, maps, concrete, seen, methods, keep, pairs, blocks)[0], els: s.els ? abstract([s.els], side, maps, concrete, seen, methods, keep, pairs, blocks)[0] : null}));
+    else if (s.k === "loop") out.push(Object.assign({}, s, {body: abstract([s.body], side, maps, concrete, seen, methods, keep, pairs, blocks)[0]}));
+    else out.push(s);
+  });
+  flush();
+  return out;
 }
 
 // ---------------------------------------------------------------- symbolic execution to SMT-LIB
@@ -250,6 +339,73 @@ Sym.prototype = {
       if (done !== "false") Object.keys(env).forEach(function (v) { if (v in before && env[v] !== before[v]) env[v] = self.iteVal(done, before[v], env[v]); });
     });
   },
+  // ---- path by path, as Symbolic PathFinder explores the method: a state is {env, sorts, pc: [conditions], stop}
+  // where stop is null, "ret", "brk" or "cont". A branch forks the state; a loop runs at most UNROLL iterations and a
+  // path that would run more is dropped (like a depth bound), so the summary only describes the paths within it.
+  paths: function (stmts, env, sorts) {
+    this.npaths = 0;
+    return this.execList(stmts, [{env: env, sorts: sorts, pc: [], stop: null}]);
+  },
+  fork: function (st, cond) {
+    if (++this.npaths > MAX_PATHS) throw new Unsupported("more than " + MAX_PATHS + " paths");
+    return {env: Object.assign({}, st.env), sorts: Object.assign({}, st.sorts), pc: cond ? st.pc.concat([cond]) : st.pc.slice(), stop: st.stop};
+  },
+  execList: function (stmts, states) {
+    var self = this;
+    stmts.forEach(function (s) {
+      var next = [];
+      states.forEach(function (st) { if (st.stop) next.push(st); else next.push.apply(next, self.execStmt(s, st)); });
+      states = next;
+    });
+    return states;
+  },
+  execStmt: function (s, st) {
+    var self = this, c;
+    if (!s) return [st];
+    switch (s.k) {
+      case "block": return this.execList(s.body, [st]);
+      case "if":
+        c = this.ev(s.cond, st.env, st.sorts)[1];
+        var a = this.fork(st, c), b = this.fork(st, "(not " + c + ")");
+        return this.execList([s.then], [a]).concat(s.els ? this.execList([s.els], [b]) : [b]);
+      case "loop":
+        this.bounded = true;
+        var out = [], live;
+        if (s.init) this.step(s.init, st.env, st.sorts);
+        live = s.isDo ? this.loopBody(s, [st], out) : [st];
+        for (var i = 0; i <= UNROLL && live.length; i++) {
+          var go = [];
+          live.forEach(function (x) {
+            var cc = self.ev(s.cond, x.env, x.sorts)[1];
+            out.push(self.fork(x, "(not " + cc + ")"));
+            if (i < UNROLL) go.push(self.fork(x, cc));
+          });
+          live = this.loopBody(s, go, out);
+        }
+        return out;
+      case "return":
+        var want = st.env.__rsort || "Real", r = s.e ? this.conv(this.ev(s.e, st.env, st.sorts), want) : [want, st.env.__ret[1]];
+        st.env.__ret = [want, this.share(want, r[1])]; st.stop = "ret";
+        return [st];
+      case "break": st.stop = "brk"; return [st];
+      case "continue": st.stop = "cont"; return [st];
+      default:
+        this.step(s, st.env, st.sorts);
+        return [st];
+    }
+  },
+  // one iteration for each live state: body (continue ends it early), then the update; break and return leave the loop
+  loopBody: function (s, states, out) {
+    var self = this, live = [];
+    this.execList([s.body], states).forEach(function (x) {
+      if (x.stop === "brk") { x.stop = null; out.push(x); return; }
+      if (x.stop === "ret") { out.push(x); return; }
+      x.stop = null;
+      if (s.upd) self.step(s.upd, x.env, x.sorts);
+      live.push(x);
+    });
+    return live;
+  },
   // the path has returned, or left the current loop iteration by break / continue
   stopped: function (env) {
     var xs = [env.__done[1], env.__brk[1], env.__cont[1]].filter(function (x) { return x !== "false"; });
@@ -340,16 +496,18 @@ Sym.prototype = {
         env.__done = ["Bool", "true"];
         return;
       case "uf":
-        // the abstracted statement: every variable it may write becomes UF(variables it reads, as they are now)
-        var args = Object.keys(s.reads).filter(function (v) { return v in env && v.indexOf("__") !== 0 && env[v][0] !== "Arr"; }).sort();
+        // the abstracted block: every variable it writes becomes UF(the block's inputs it depends on, as they are now)
+        var vals = {};
         Object.keys(s.defs).forEach(function (v) {
+          var args = Object.keys(s.deps[v] || {}).filter(function (x) { return x in env && x.indexOf("__") !== 0 && env[x][0] !== "Arr"; }).sort();
           var sort = s.defs[v] ? SORT[s.defs[v]] : sorts[v];
           if (!sort) throw new Unsupported("unknown type of " + v);
           sorts[v] = sort;
-          var nm = "UF_" + v + "_L" + s.id + "_" + args.length;
+          var nm = "UF_" + v + "_B" + s.id + "_" + args.length;
           self.ufs[nm] = [args.map(function (x) { return env[x][0]; }), sort];
-          env[v] = [sort, args.length ? "(" + nm + " " + args.map(function (x) { return env[x][1]; }).join(" ") + ")" : nm];
+          vals[v] = [sort, args.length ? "(" + nm + " " + args.map(function (x) { return env[x][1]; }).join(" ") + ")" : nm];
         });
+        Object.keys(vals).forEach(function (v) { env[v] = vals[v]; });
         return;
     }
   }
@@ -360,17 +518,34 @@ var PRELUDE = "(define-fun jdiv ((a Int) (b Int)) Int (ite (>= a 0) (ite (> b 0)
   "(define-fun jtrunc ((x Real)) Int (ite (>= x 0.0) (to_int x) (- (to_int (- x)))))\n";
 
 // ao / an: abstracted bodies of every method of each version ("name/arity" -> statements)
+// Each version's summary is, as in ARDiff, the disjunction over its paths of (path condition and the returned value):
+// Ret = the value, plus Exc = whether the path throws. ARDiff's query is summaryOld and not (summaryOld = summaryNew).
 function buildQuery(mo, mn, ao, an, ranges) {
-  var sym = new Sym(), envs = [], splitAt = 0;
+  var sym = new Sym(), sums = [], apps = [], merged = [];
   [[mo, ao], [mn, an]].forEach(function (p) {
     var env = {__done: ["Bool", "false"], __brk: ["Bool", "false"], __cont: ["Bool", "false"], __ret: ["Real", "ret_none"], __exc: ["Bool", "false"]}, sorts = {};
     p[0].params.forEach(function (q) { env[q.name] = [SORT[q.type], q.name]; sorts[q.name] = SORT[q.type]; });
     sym.methods = p[1]; sym.all = p[0].methods;
-    sym.run(p[1][p[0].key], env, sorts);
-    envs.push(env);
-    if (envs.length === 1) splitAt = sym.defs.length;
+    var defs0 = sym.defs.length, states;
+    var one = function (pc, xr, rv) { return "(and " + pc.join(" ") + " (= Exc " + xr + ")" + (xr === "true" ? "" : xr === "false" ? " (= Ret " + rv + ")" : " (or " + xr + " (= Ret " + rv + "))") + ")"; };
+    try {
+      states = sym.paths(p[1][p[0].key], Object.assign({}, env), Object.assign({}, sorts));
+      var size = 0; states.forEach(function (x) { size += x.pc.join(" ").length + x.env.__ret[1].length; });
+      if (size > MAX_SUMMARY) throw new Unsupported("path summary larger than " + MAX_SUMMARY + " characters");
+    }
+    catch (e) {
+      if (!(e instanceof Unsupported) || !/paths|path summary/.test(e.message)) throw e;
+      // too many paths: this version is summarized as one term with the branches merged (if-then-else) instead
+      merged.push(sums.length ? "new" : "old"); sym.defs.length = defs0;
+      sym.run(p[1][p[0].key], env, sorts);
+      states = [{pc: ["true"], env: env}];
+    }
+    var ps = states.map(function (x) { return one(x.pc.length ? x.pc : ["true"], x.env.__exc[1], x.env.__ret[1]); });
+    sums.push(ps.length ? (ps.length === 1 ? ps[0] : "(or " + ps.join(" ") + ")") : "false");
+    apps.push(sym.defs.slice(defs0).map(function (d) { return d[2]; }).concat(ps));
   });
-  var decl = mo.params.map(function (q) { return "(declare-fun " + q.name + " () " + SORT[q.type] + ")\n"; }).join("") + "(declare-fun ret_none () Real)\n";
+  var decl = mo.params.map(function (q) { return "(declare-fun " + q.name + " () " + SORT[q.type] + ")\n"; }).join("") +
+    "(declare-fun ret_none () Real)\n(declare-fun Ret () Real)\n(declare-fun Exc () Bool)\n";
   var rng = mo.params.filter(function (q) { return q.type !== "Z"; }).map(function (q) {
     var r = ranges[q.name] || [MIN, MAX], num = function (v) { var t = q.type === "I" ? String(Math.abs(v)) : Math.abs(v).toFixed(1); return v < 0 ? "(- " + t + ")" : t; };
     return "(and (<= " + num(r[0]) + " " + q.name + ") (<= " + q.name + " " + num(r[1]) + "))";
@@ -378,18 +553,19 @@ function buildQuery(mo, mn, ao, an, ranges) {
   decl += rng.map(function (x) { return "(assert " + x + ")\n"; }).join("");
   Object.keys(sym.ufs).sort().forEach(function (n) { decl += "(declare-fun " + n + " (" + sym.ufs[n][0].join(" ") + ") " + sym.ufs[n][1] + ")\n"; });
   sym.defs.forEach(function (d) { decl += "(declare-fun " + d[0] + " () " + d[1] + ")\n(assert (= " + d[0] + " " + d[2] + "))\n"; });
-  sym.assume.forEach(function (x) { decl += "(assert " + x + ")\n"; });
-  // same result: both throw, or neither does and the returned values are equal
-  var xo = envs[0].__exc[1], xn = envs[1].__exc[1], same = "(= " + envs[0].__ret[1] + " " + envs[1].__ret[1] + ")";
-  var claim = xo === "false" && xn === "false" ? same : "(and (= " + xo + " " + xn + ") (or " + xo + " " + same + "))";
-  // the UFs the formula actually mentions (an abstracted statement whose result is never used is not worth refining)
-  var body = sym.defs.map(function (d) { return d[2]; }).concat(sym.assume, [claim]).join(" ");
+  sym.assume.forEach(function (x) { decl += "(assert " + x + ")\n"; });      // loops in inlined callees
+  var same = "(= " + sums[0] + " " + sums[1] + ")";
+  // the UFs the formula actually mentions (an abstracted block whose result is never used is not worth refining)
+  var body = sym.defs.map(function (d) { return d[2]; }).concat(sums).join(" ");
   var used = Object.keys(sym.ufs).filter(function (n) { return new RegExp("[ (]" + n + "[ )]").test(" " + body + " "); });
-  return {smt: PRELUDE + decl + "(assert (not " + claim + "))\n(check-sat)\n" + (mo.params.length ? "(get-value (" + mo.params.map(function (q) { return q.name; }).join(" ") + "))\n" : ""),
-          // ARDiff's satisfiability check: can the two versions agree at all, for some input and some meaning of the abstracted statements?
-          agree: PRELUDE + decl + "(assert " + claim + ")\n(check-sat)\n",
-          vacuity: sym.assume.length ? PRELUDE + decl + "(check-sat)\n" : null, ufs: used, bounded: sym.bounded,
-          occ: occurrences(sym, envs, splitAt), h1: function (f) { return h1Query(mo, sym, rng, claim, f); }};
+  return {smt: PRELUDE + decl + "(assert " + sums[0] + ")\n(assert (not " + same + "))\n(check-sat)\n" + (mo.params.length ? "(get-value (" + mo.params.map(function (q) { return q.name; }).join(" ") + "))\n" : ""),
+          // ARDiff's satisfiability check (DSE.checkForSatisfiability): summaryOld and summaryOld = summaryNew
+          agree: PRELUDE + decl + "(assert " + sums[0] + ")\n(assert " + same + ")\n(check-sat)\n",
+          noPaths: sums[0] === "false" || sums[1] === "false", ufs: used, bounded: sym.bounded, merged: merged,
+          // with a merged summary (or a loop in an inlined callee) the loop bound is an assumption on the inputs:
+          // if no input meets it, an unsat query says nothing
+          vacuity: sym.assume.length ? PRELUDE + decl + "(check-sat)\n" : null,
+          occ: occurrences(sym, apps), h1: function (f) { return h1Query(mo, sym, rng, same, f); }};
 }
 
 // ---------------------------------------------------------------- ARDiff's refinement heuristics (GradDiff.getNextToRefine)
@@ -401,13 +577,10 @@ function ufApps(term, ufs, out) {
   })(sexprs(term)[0]);
   return out;
 }
-// how often each abstracted function is applied in the old and in the new summary (H2 compares these)
-function occurrences(sym, envs, splitAt) {
-  var count = function (terms) {
-    var c = {}; terms.forEach(function (x) { ufApps(x, sym.ufs, []).forEach(function (a) { c[a[0]] = (c[a[0]] || 0) + 1; }); }); return c;
-  };
-  var side = function (env, defs) { return defs.map(function (d) { return d[2]; }).concat([env.__ret[1], env.__exc[1]]); };
-  return {old: count(side(envs[0], sym.defs.slice(0, splitAt))), new: count(side(envs[1], sym.defs.slice(splitAt)))};
+// how often each application of an abstracted function occurs in the old and in the new summary (H2 compares these)
+function occurrences(sym, apps) {
+  var count = function (terms) { var c = {}; terms.forEach(function (x) { ufApps(x, sym.ufs, []).forEach(function (a) { c[a[1]] = (c[a[1]] || 0) + 1; }); }); return c; };
+  return {old: count(apps[0]), new: count(apps[1])};
 }
 // H1: every application of an abstracted function becomes a constant; is there a value for the applications of f
 // that makes the two versions agree whatever the inputs and the other constants are?
@@ -425,51 +598,43 @@ function h1Query(mo, sym, rng, claim, f) {
   var assume = sym.assume.map(subst), body = subst(claim);
   var all = Object.keys(consts).map(function (k) { return consts[k]; });
   if (!all.some(function (c) { return c.fn === f; })) return null;
-  var bound = mo.params.map(function (q) { return "(" + q.name + " " + SORT[q.type] + ")"; })
+  var bound = mo.params.map(function (q) { return "(" + q.name + " " + SORT[q.type] + ")"; }).concat(["(Ret Real)", "(Exc Bool)"])
     .concat(sym.defs.map(function (d) { return "(" + d[0] + " " + d[1] + ")"; }))
     .concat(all.filter(function (c) { return c.fn !== f; }).map(function (c) { return "(" + c.name + " " + c.sort + ")"; }));
   var pre = rng.concat(defs, assume);
-  return PRELUDE + "(declare-fun ret_none () Real)\n" +
+  // a short time limit: ARDiff only takes a function from H1 when z3 says sat, and these queries rarely finish
+  return "(set-option :timeout " + H1_TIMEOUT + ")\n" + PRELUDE + "(declare-fun ret_none () Real)\n" +
     all.filter(function (c) { return c.fn === f; }).map(function (c) { return "(declare-fun " + c.name + " () " + c.sort + ")\n"; }).join("") +
     "(assert (forall (" + bound.join(" ") + ") " + (pre.length ? "(=> (and " + pre.join(" ") + ") " + body + ")" : body) + "))\n(check-sat)\n";
 }
-// H3: the simplest statement first: loops it is (1 for a loop), plus * and / and method calls in an assignment
-function h3Score(stmt, src) {
-  if (!stmt) return 0;
-  var loops = stmt.k === "loop" ? 1 : 0;
-  if (stmt.k !== "assign" && stmt.k !== "decl") return loops;
-  var text = Engine.stripComments(src.split("\n").slice(stmt.l0 - 1, stmt.l1).join("\n"));
-  return loops + (text.match(/[*\/]/g) || []).length + (text.match(/\b[A-Za-z_]\w*\s*\(/g) || []).length;
+// H3: the simplest statement first: the loops it sits in inside its block, plus * and / and method calls in it
+function h3Score(e, src) {
+  var s = e.stmt, n = e.loops;
+  if (s.k !== "assign" && s.k !== "decl" && s.k !== "expr") return n;
+  var text = Engine.stripComments(src.split("\n").slice(s.l0 - 1, s.l1).join("\n"));
+  return n + (text.match(/[*\/]/g) || []).length + (text.match(/\b[A-Za-z_]\w*\s*\(/g) || []).length;
 }
-function findStmt(stmts, line) {
-  for (var i = 0; i < stmts.length; i++) {
-    var s = stmts[i];
-    if (s.l0 === line) return s;
-    var inner = [].concat(s.body || [], s.then ? [s.then] : [], s.els ? [s.els] : []);
-    if (s.k === "loop" && s.body) inner = [s.body];
-    var r = inner.length ? findStmt(inner, line) : null;
-    if (r) return r;
-  }
-  return null;
-}
-async function pickToRefine(q, rec, mo, oldSrc, z3eval) {
-  var stmtOf = function (fn) { var m = /_L(\d+)_\d+$/.exec(fn); return m ? +m[1] : null; };
-  var open = q.ufs.filter(function (fn) { var id = stmtOf(fn); return id !== null && rec.abstracted.indexOf(id) >= 0; });
-  var h1 = [], h2 = [];
+async function pickToRefine(q, rec, blocks, oldSrc, z3eval) {
+  var parse = function (fn) { var m = /^UF_(.+)_B(\d+)_\d+$/.exec(fn); return m ? {v: m[1], block: +m[2]} : null; };
+  var open = q.ufs.filter(function (fn) { var f = parse(fn); return f && blocks[f.block] && blocks[f.block][f.v]; });
+  var h1 = [], h2 = [], fnOf = function (app) { return app.replace(/^\(/, "").split(" ")[0]; }, fnsOld = {};
+  Object.keys(q.occ.old).forEach(function (app) { fnsOld[fnOf(app)] = 1; });
   // H1 (the functions of the old summary)
   for (var i = 0; i < open.length; i++) {
-    if (!q.occ.old[open[i]]) continue;
+    if (!fnsOld[open[i]]) continue;
     var smt = q.h1(open[i]); if (!smt) continue;
     var a = (await z3eval(smt)).trim().split("\n")[0];
     if (a === "sat") h1.push(open[i]);
   }
-  // H2: only in one summary, or applied a different number of times
-  open.forEach(function (fn) { if ((q.occ.old[fn] || 0) !== (q.occ.new[fn] || 0)) h2.push(fn); });
+  // H2: an application only in one summary, or occurring a different number of times
+  var differ = {};
+  Object.keys(q.occ.old).concat(Object.keys(q.occ.new)).forEach(function (app) { if ((q.occ.old[app] || 0) !== (q.occ.new[app] || 0)) differ[fnOf(app)] = 1; });
+  open.forEach(function (fn) { if (differ[fn]) h2.push(fn); });
   var cand = h1.concat(h2.filter(function (fn) { return h1.indexOf(fn) < 0; }));
   if (!cand.length) cand = open;
-  // H3 over the statements of the candidates (ties: the earlier line)
-  var ids = []; cand.forEach(function (fn) { var id = stmtOf(fn); if (ids.indexOf(id) < 0) ids.push(id); });
-  var scores = {}; ids.forEach(function (id) { scores[id] = h3Score(findStmt(mo.stmts, id), oldSrc); });
+  // H3 over the statements of the candidates' blocks that write their variable (ties: the earlier line)
+  var ids = [], scores = {};
+  cand.forEach(function (fn) { var f = parse(fn); blocks[f.block][f.v].forEach(function (e) { if (ids.indexOf(e.line) < 0) { ids.push(e.line); scores[e.line] = h3Score(e, oldSrc); } }); });
   ids.sort(function (x, y) { return scores[x] - scores[y] || x - y; });
   rec.heuristics = {h1: h1, h2: h2, h3: scores};
   return ids.length ? ids[0] : null;
@@ -496,23 +661,27 @@ async function analyze(oldSrc, newSrc, z3eval, onStep, opts) {
   var maps = lineMaps(oldSrc, newSrc), oldLines = oldSrc.split("\n");
   var changed = []; for (var l = 1; l <= oldLines.length; l++) if (!maps.o2n[l] && !maps.blankOld[l - 1]) changed.push(l);
   var concrete = {}, iters = [], verdict = null, reason = null, cex = null;
+  var pairsOld = {}, pairsNew = {};
+  Object.keys(mo.methods).forEach(function (k) { adjacentPairs(mo.methods[k].stmts, "old", maps, pairsOld); });
+  Object.keys(mn.methods).forEach(function (k) { adjacentPairs(mn.methods[k].stmts, "new", maps, pairsNew); });
   var started = Date.now();
   for (var it = 0; it < 60; it++) {
     if (Date.now() - started > TIME_LIMIT) { verdict = "UNKNOWN"; reason = "time limit (" + TIME_LIMIT / 1000 + " s)"; break; }
-    var seen = {};
+    var seen = {}, blocks = {};
     var absAll = function (m, side) {
       var out = {};
-      Object.keys(m.methods).forEach(function (k) { out[k] = abstract(m.methods[k].stmts, side, maps, concrete, seen, m.methods, sizeVars(m.methods[k].stmts)); });
+      Object.keys(m.methods).forEach(function (k) { out[k] = abstract(m.methods[k].stmts, side, maps, concrete, seen, m.methods, sizeVars(m.methods[k].stmts), side === "old" ? pairsNew : pairsOld, k === m.key ? blocks : null); });
       return out;
     };
-    var q = buildQuery(mo, mn, absAll(mo, "old"), absAll(mn, "new"), ranges);
-    var out = (await z3eval(q.smt)).trim(), status = out.split("\n")[0].trim();
-    var rec = {iter: it, abstracted: Object.keys(seen).map(Number).sort(function (a, b) { return a - b; }), status: status, bounded: q.bounded,
+    var q = buildQuery(mo, mn, absAll(mo, "old"), absAll(mn, "new"), ranges), out;
+    try { out = (await z3eval(q.smt)).trim(); } catch (e) { verdict = "UNKNOWN"; reason = "z3 failed: " + (e.message || e); break; }
+    var status = out.split("\n")[0].trim();
+    var rec = {iter: it, merged: q.merged, abstracted: Object.keys(seen).map(Number).sort(function (a, b) { return a - b; }), status: status, bounded: q.bounded,
                smt: q.smt, out: out};
     iters.push(rec);
     if (status === "unsat") {
       if (q.vacuity) { rec.vacuity = q.vacuity; rec.vacuityOut = (await z3eval(q.vacuity)).trim(); }
-      if (q.vacuity && rec.vacuityOut.split("\n")[0] !== "sat") { verdict = "UNKNOWN"; reason = "every input runs a loop more than " + UNROLL + " times"; }
+      if (q.noPaths || (q.vacuity && rec.vacuityOut.split("\n")[0] !== "sat")) { verdict = "UNKNOWN"; reason = "every input runs a loop more than " + UNROLL + " times"; }
       else { verdict = "EQUIVALENT"; reason = "for inputs in " + rangeText(mo, ranges) + (q.bounded ? ", loops up to " + UNROLL + " iterations" : ""); }
       break;
     }
@@ -535,7 +704,7 @@ async function analyze(oldSrc, newSrc, z3eval, onStep, opts) {
       rec.real = false;
     }
     // refine: make one abstracted statement concrete again, chosen with ARDiff's heuristics H1, H2 and H3
-    var pick = await pickToRefine(q, rec, mo, oldSrc, z3eval);
+    var pick = await pickToRefine(q, rec, blocks, oldSrc, z3eval);
     if (pick === null) {
       if (status === "sat") { verdict = "NOT EQUIVALENT"; cex = {inputs: inputs, old: rec.run[0], new: rec.run[1]}; rec.real = true; }
       else { verdict = "UNKNOWN"; reason = "z3: " + status; }
