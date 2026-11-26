@@ -769,12 +769,16 @@ function renderIns() {
 }
 
 function bind() {
-  var rb = $("runbtn"); if (rb) rb.addEventListener("click", runRemote);
+  var rb = $("runbtn"); if (rb && !rb.dataset.bound) { rb.dataset.bound = "1"; rb.addEventListener("click", runRemote); }
+  // bind() runs again whenever the inputs are redrawn (e.g. when ARDiff-lite adds its counterexample): an element
+  // that already has its handlers must not get them twice, or a click would toggle twice and show nothing
   document.querySelectorAll("[data-run]").forEach(function (e) {
+    if (e.dataset.bound) return; e.dataset.bound = "1";
     var go = function (ev) { ev.stopPropagation(); select(+e.dataset.run); };
     e.addEventListener("click", go); e.addEventListener("keydown", function (ev) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); go(ev); } });
   });
   document.querySelectorAll("#tbl td.c").forEach(function (td) {
+    if (td.dataset.bound) return; td.dataset.bound = "1";
     td.addEventListener("click", function () {
       if (st.run === null || !td.classList.contains("fl")) return;
       var side = td.classList.contains("L") ? "L" : "R", line = +td.dataset[side.toLowerCase()];
@@ -782,6 +786,7 @@ function bind() {
     });
   });
   document.querySelectorAll(".hk").forEach(function (e) {
+    if (e.dataset.bound) return; e.dataset.bound = "1";
     e.addEventListener("click", function () { st.hk = st.hk === +e.dataset.hk ? null : +e.dataset.hk; paint(); });
     e.addEventListener("keydown", function (ev) { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); e.click(); } });
   });
