@@ -414,14 +414,25 @@ function fmt(v, ret) {
 }
 
 // ---------------------------------------------------------------- inputs
-function inputSet(params, limit, consts) {
+// ranges (optional): {param: [lo, hi]}; a parameter with a range only gets values inside it
+function inputSet(params, limit, consts, ranges) {
   limit = limit || 2500;
   var ints = [-100, -51, -50, -11, -10, -7, -5, -3, -2, -1, 0, 1, 2, 3, 5, 7, 9, 10, 11, 12, 49, 50, 51, 99, 100];
   // constants that appear in the code, and their neighbours, are where boundaries usually are
   (consts || []).forEach(function (c) { [c - 1, c, c + 1, -c].forEach(function (v) { if (ints.indexOf(v) < 0 && Math.abs(v) <= 1000) ints.push(v); }); });
   ints.sort(function (x, y) { return x - y; });
   var dbls = [-100, -10.5, -2.5, -1, -0.5, 0, 0.5, 1, 2.5, 10.5, 100];
-  var doms = params.map(function (p) { return p.type === "Z" ? [false, true] : p.type === "D" ? dbls : ints; });
+  var doms = params.map(function (p) {
+    var r = ranges && ranges[p.name], d = p.type === "Z" ? [false, true] : p.type === "D" ? dbls : ints;
+    if (!r || p.type === "Z") return d;
+    var w = [];
+    (consts || []).forEach(function (c) { [c - 1, c, c + 1].forEach(function (v) { if (w.indexOf(v) < 0) w.push(v); }); });
+    d.concat(w, [r[0], r[0] + 1, r[1] - 1, r[1]]).forEach(function (v) { if (v >= r[0] && v <= r[1] && w.indexOf(v) < 0) w.push(v); });
+    w = w.filter(function (v) { return v >= r[0] && v <= r[1]; });
+    // and a spread across the range, so values far from the constants come up too
+    for (var k = 1; k < 20; k++) { var v = r[0] + Math.round((r[1] - r[0]) * k / 20); if (w.indexOf(v) < 0) w.push(v); }
+    return w.sort(function (x, y) { return x - y; });
+  });
   var total = doms.reduce(function (a, d) { return a * d.length; }, 1), out = [];
   if (total <= limit) {
     (function rec(i, cur) {
@@ -559,7 +570,7 @@ function analyze(oldSrc, newSrc, opts) {
   }
   var consts = [];
   (stripComments(oldSrc) + "\n" + stripComments(newSrc)).replace(/\b\d+\b(?!\.)/g, function (m) { var v = +m; if (consts.indexOf(v) < 0) consts.push(v); return m; });
-  var inputs = inputSet(mo.params, 2500, consts), keys = {}, extra = [];
+  var inputs = inputSet(mo.params, 2500, consts, opts && opts.ranges), keys = {}, extra = [];
   inputs.forEach(function (x) { keys[JSON.stringify(x)] = 1; });
   ((opts && opts.extra) || []).forEach(function (x) { if (!keys[JSON.stringify(x)]) { keys[JSON.stringify(x)] = 1; extra.push(x); } });
   // a hybrid may use a variable that only the other version declares: declare it as that version does

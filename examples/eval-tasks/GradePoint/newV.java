@@ -1,5 +1,4 @@
 public class newV {
-    // refactored for readability: one grade point for every 10 points from 60, at most 4
     public static double snippet(int score) {
         int g = 0;
         g = (score - 60) / 10 + 1;

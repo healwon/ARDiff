@@ -1,8 +1,8 @@
 {
  "title": "Grade point",
- "goal": "Old version: returns the grade point for a score: 90 and above 4, 80s 3, 70s 2, 60s 1, below 60 0, and -1 for a score outside 0..100 (85 → 3, 45 → 0, 95 → 4, 101 → -1).\nNew version: a refactoring of the old version for readability (the chain of ifs replaced by one grade point for every 10 points) that accidentally changed its behaviour.\nGoal: change the new version so that it returns the same result as the old version for every input. Do not copy the old version over the new one; change the new version as little as possible.",
+ "goal": "New version: a refactoring of the old version that accidentally changed its behaviour.\nGoal: change the new version so that it returns the same result as the old version for every input. Do not copy the old version over the new one.",
  "keep": [],
  "title_ko": "학점",
- "goal_ko": "기존 버전: 점수의 학점을 반환합니다. 90점 이상 4, 80점대 3, 70점대 2, 60점대 1, 60점 미만 0이고, 0..100 밖의 점수는 -1입니다 (85 → 3, 45 → 0, 95 → 4, 101 → -1).\n새 버전: 읽기 쉽게 하려고 기존 버전을 리팩터링한 것(if 사슬을 10점마다 1학점씩 계산하는 식으로 바꾸기)인데, 실수로 동작이 바뀌었습니다.\n목표: 모든 입력에서 기존 버전과 같은 결과를 내도록 새 버전을 고치세요. 기존 버전을 그대로 복사해 넣지 말고, 새 버전을 최소한으로 고치세요.",
+ "goal_ko": "새 버전: 기존 버전을 리팩터링하다가 실수로 동작이 바뀐 코드입니다.\n목표: 모든 입력에서 기존 버전과 같은 결과를 내도록 새 버전을 고치세요. 기존 버전을 그대로 복사해 넣지 마세요.",
  "difficulty": "hard"
 }

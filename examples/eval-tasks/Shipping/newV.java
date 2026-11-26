@@ -1,5 +1,4 @@
 public class newV {
-    // refactored for readability: the fee is assembled from named parts
     public static double snippet(int weight, int total, int express) {
         int base = 5;
         int extra = 0;

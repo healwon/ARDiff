@@ -1,6 +1,4 @@
 public class oldV {
-    // grade points for a score: 90 and above 4, 80s 3, 70s 2, 60s 1, below 60 0;
-    // -1 for a score outside 0..100
     public static double snippet(int score) {
         int g = 0;
         if (score > 100) {

@@ -4,20 +4,27 @@
 //      `x = UF_x_L<line>(variables it reads)`; the matching statement in the other version uses the same UF
 //   2. both versions are executed symbolically (loops unrolled, ints as mathematical integers, Java / and %)
 //      and z3 is asked whether their results can differ (inputs bounded like ARDiff: -100..100)
-//   3. unsat -> EQUIVALENT. sat -> the model's inputs are run on the real code: if the results differ,
-//      NOT EQUIVALENT (a real counterexample); otherwise the difference came from the abstraction, so one
-//      abstracted statement is made concrete again (refinement) and we go back to 2
+//   3. unsat -> EQUIVALENT. sat -> as in ARDiff: with nothing abstracted, NOT EQUIVALENT; otherwise z3 is asked whether
+//      the two versions can agree at all (for some input and some meaning of the abstracted statements): if not,
+//      NOT EQUIVALENT; if so, one abstracted statement is made concrete again (refinement) and we go back to 2.
+//      The model's inputs are reported as the counterexample; they are not run on the real code to decide.
 //
 // Calls to other methods of the class are inlined (their common statements are abstracted the same way);
 // local arrays have a fixed, constant size and an index out of bounds is an exception, as in Java.
 //
-// This is a re-implementation, not ARDiff: the summaries are functional (no per-path fresh variables) and
-// spurious counterexamples are discarded by running them, so it can differ from ARDiff's verdict.
+// This is a re-implementation, not ARDiff: the summaries are functional (no per-path fresh variables) and the
+// statement to refine is the abstracted one closest to a change (ARDiff uses its heuristics H1-H3), so it can
+// differ from ARDiff's verdict.
 (function (root) {
 "use strict";
 var Engine = root.Engine;
 var UNROLL = 10, MIN = -100, MAX = 100, MAX_TERM = 200, TIME_LIMIT = 90000;
 
+function rangeText(mo, ranges) {
+  var own = mo.params.filter(function (q) { return ranges[q.name]; });
+  if (!own.length) return MIN + ".." + MAX;
+  return mo.params.filter(function (q) { return q.type !== "Z"; }).map(function (q) { var r = ranges[q.name] || [MIN, MAX]; return q.name + " " + r[0] + ".." + r[1]; }).join(", ");
+}
 function Unsupported(m) { this.message = m; }
 
 // ---------------------------------------------------------------- which statements are common
@@ -353,7 +360,7 @@ var PRELUDE = "(define-fun jdiv ((a Int) (b Int)) Int (ite (>= a 0) (ite (> b 0)
   "(define-fun jtrunc ((x Real)) Int (ite (>= x 0.0) (to_int x) (- (to_int (- x)))))\n";
 
 // ao / an: abstracted bodies of every method of each version ("name/arity" -> statements)
-function buildQuery(mo, mn, ao, an) {
+function buildQuery(mo, mn, ao, an, ranges) {
   var sym = new Sym(), envs = [];
   [[mo, ao], [mn, an]].forEach(function (p) {
     var env = {__done: ["Bool", "false"], __brk: ["Bool", "false"], __cont: ["Bool", "false"], __ret: ["Real", "ret_none"], __exc: ["Bool", "false"]}, sorts = {};
@@ -364,7 +371,8 @@ function buildQuery(mo, mn, ao, an) {
   });
   var decl = mo.params.map(function (q) { return "(declare-fun " + q.name + " () " + SORT[q.type] + ")\n"; }).join("") + "(declare-fun ret_none () Real)\n";
   decl += mo.params.filter(function (q) { return q.type !== "Z"; }).map(function (q) {
-    var lo = q.type === "I" ? String(-MIN).replace(/^/, "(- ") + ")" : "(- " + (-MIN).toFixed(1) + ")", hi = q.type === "I" ? String(MAX) : MAX.toFixed(1);
+    var r = ranges[q.name] || [MIN, MAX], num = function (v) { var t = q.type === "I" ? String(Math.abs(v)) : Math.abs(v).toFixed(1); return v < 0 ? "(- " + t + ")" : t; };
+    var lo = num(r[0]), hi = num(r[1]);
     return "(assert (and (<= " + lo + " " + q.name + ") (<= " + q.name + " " + hi + ")))\n";
   }).join("");
   Object.keys(sym.ufs).sort().forEach(function (n) { decl += "(declare-fun " + n + " (" + sym.ufs[n][0].join(" ") + ") " + sym.ufs[n][1] + ")\n"; });
@@ -377,6 +385,8 @@ function buildQuery(mo, mn, ao, an) {
   var body = sym.defs.map(function (d) { return d[2]; }).concat(sym.assume, [claim]).join(" ");
   var used = Object.keys(sym.ufs).filter(function (n) { return new RegExp("[ (]" + n + "[ )]").test(" " + body + " "); });
   return {smt: PRELUDE + decl + "(assert (not " + claim + "))\n(check-sat)\n" + (mo.params.length ? "(get-value (" + mo.params.map(function (q) { return q.name; }).join(" ") + "))\n" : ""),
+          // ARDiff's satisfiability check: can the two versions agree at all, for some input and some meaning of the abstracted statements?
+          agree: PRELUDE + decl + "(assert " + claim + ")\n(check-sat)\n",
           vacuity: sym.assume.length ? PRELUDE + decl + "(check-sat)\n" : null, ufs: used, bounded: sym.bounded};
 }
 
@@ -394,7 +404,9 @@ function value(x) {
 }
 
 // ---------------------------------------------------------------- the loop
-async function analyze(oldSrc, newSrc, z3eval, onStep) {
+// opts.ranges: {param: [lo, hi]} for the inputs to consider (default -100..100 for every number, as in ARDiff)
+async function analyze(oldSrc, newSrc, z3eval, onStep, opts) {
+  var ranges = (opts && opts.ranges) || {};
   var mo = Engine.parseMethod(oldSrc), mn = Engine.parseMethod(newSrc);
   var maps = lineMaps(oldSrc, newSrc), oldLines = oldSrc.split("\n");
   var changed = []; for (var l = 1; l <= oldLines.length; l++) if (!maps.o2n[l] && !maps.blankOld[l - 1]) changed.push(l);
@@ -408,7 +420,7 @@ async function analyze(oldSrc, newSrc, z3eval, onStep) {
       Object.keys(m.methods).forEach(function (k) { out[k] = abstract(m.methods[k].stmts, side, maps, concrete, seen, m.methods, sizeVars(m.methods[k].stmts)); });
       return out;
     };
-    var q = buildQuery(mo, mn, absAll(mo, "old"), absAll(mn, "new"));
+    var q = buildQuery(mo, mn, absAll(mo, "old"), absAll(mn, "new"), ranges);
     var out = (await z3eval(q.smt)).trim(), status = out.split("\n")[0].trim();
     var rec = {iter: it, abstracted: Object.keys(seen).map(Number).sort(function (a, b) { return a - b; }), status: status, bounded: q.bounded,
                smt: q.smt, out: out};
@@ -416,7 +428,7 @@ async function analyze(oldSrc, newSrc, z3eval, onStep) {
     if (status === "unsat") {
       if (q.vacuity) { rec.vacuity = q.vacuity; rec.vacuityOut = (await z3eval(q.vacuity)).trim(); }
       if (q.vacuity && rec.vacuityOut.split("\n")[0] !== "sat") { verdict = "UNKNOWN"; reason = "every input runs a loop more than " + UNROLL + " times"; }
-      else { verdict = "EQUIVALENT"; reason = "for inputs in " + MIN + ".." + MAX + (q.bounded ? ", loops up to " + UNROLL + " iterations" : ""); }
+      else { verdict = "EQUIVALENT"; reason = "for inputs in " + rangeText(mo, ranges) + (q.bounded ? ", loops up to " + UNROLL + " iterations" : ""); }
       break;
     }
     var inputs = null;
@@ -429,14 +441,23 @@ async function analyze(oldSrc, newSrc, z3eval, onStep) {
       rec.model = inputs;
       var ro = Engine.run(mo, inputs).value, rn = Engine.run(mn, inputs).value;
       rec.run = [ro, rn];
-      if (ro !== rn) { verdict = "NOT EQUIVALENT"; cex = {inputs: inputs, old: ro, new: rn}; rec.real = true; break; }
+      // as in ARDiff (GradDiff / DSE.checkForSatisfiability): with nothing abstracted, a difference is final; otherwise
+      // the verdict is NOT EQUIVALENT only when no meaning of the abstracted statements lets the two versions agree.
+      // The model is not run on the real code to decide; it is only reported as the counterexample.
+      if (!q.ufs.length) { verdict = "NOT EQUIVALENT"; cex = {inputs: inputs, old: ro, new: rn}; rec.real = true; break; }
+      rec.agreeOut = (await z3eval(q.agree)).trim();
+      if (rec.agreeOut.split("\n")[0] === "unsat") { verdict = "NOT EQUIVALENT"; cex = {inputs: inputs, old: ro, new: rn}; rec.real = true; break; }
       rec.real = false;
     }
     // refine: make one abstracted statement concrete again; prefer the ones the formula uses, closest to a change
     var used = {}; q.ufs.forEach(function (n) { var m = /_L(\d+)_\d+$/.exec(n); if (m) used[m[1]] = 1; });
     var cand = rec.abstracted.filter(function (id) { return used[id]; });
     if (!cand.length) cand = rec.abstracted;
-    if (!cand.length) { verdict = "UNKNOWN"; reason = status === "sat" ? "difference only from integer overflow or the loop bound" : "z3: " + status; break; }
+    if (!cand.length) {
+      if (status === "sat") { verdict = "NOT EQUIVALENT"; cex = {inputs: inputs, old: rec.run[0], new: rec.run[1]}; rec.real = true; }
+      else { verdict = "UNKNOWN"; reason = "z3: " + status; }
+      break;
+    }
     var dist = function (id) { return Math.min.apply(null, changed.map(function (c) { return Math.abs(c - id); }).concat([1e9])); };
     cand.sort(function (a, b) { return dist(a) - dist(b) || a - b; });
     rec.pick = cand[0];

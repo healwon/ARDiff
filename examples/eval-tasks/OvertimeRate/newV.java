@@ -1,5 +1,4 @@
 public class newV {
-    // refactored for readability: regular and overtime hours split with Math.min / Math.max
     public static double snippet(int hours, int rate, int holiday) {
         int pay = 0;
         int regular = 0;
