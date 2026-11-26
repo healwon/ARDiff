@@ -562,9 +562,24 @@ function rawLog() {
   if (EVAL && taskSpec() && lite.spec) log += "\n; ================ ARDiff-lite: spec vs new ================\n" + liteLog(lite.spec, "spec", "new");
   return log;
 }
+// the time of each stage of one iteration, in ARDiff's own terms (its output lists the same stages)
+function timesText(t) {
+  if (!t) return "";
+  var ms = function (x) { return x.toFixed(1) + " ms"; };
+  return (t.init ? "; -Initialization : " + ms(t.init) + "\n" : "") +
+    "; -Def-use and uninterpreted functions : " + ms(t.abstract) + "\n; -Symbolic execution : " + ms(t.symex) + "\n" +
+    "; -Creating Z3 expressions : " + ms(t.smt) + "\n; -Constraint solving : " + ms(t.solve) + "\n" +
+    (t.refine ? "; -Choosing what to refine (H1-H3) : " + ms(t.refine) + "\n" : "");
+}
+function totalTimes(r) {
+  var sum = {init: 0, abstract: 0, symex: 0, smt: 0, solve: 0, refine: 0};
+  r.iterations.forEach(function (it) { if (it.times) Object.keys(sum).forEach(function (k) { sum[k] += it.times[k] || 0; }); });
+  var all = Object.keys(sum).reduce(function (a, k) { return a + sum[k]; }, 0);
+  return "; ===== time over " + r.iterations.length + " iteration(s): " + all.toFixed(1) + " ms =====\n" + timesText(sum);
+}
 function liteLog(r, a, b) {
   return r.iterations.filter(function (it) { return lite.sel === null || it.iter === lite.sel; }).map(function (it) {
-    var s = "; ===== iteration " + it.iter + " =====\n; abstracted (shared undef. functions): " + (it.abstracted.length ? "lines " + it.abstracted.join(", ") : "none") + "\n" +
+    var s = "; ===== iteration " + it.iter + " =====\n" + timesText(it.times) + "; abstracted (shared undef. functions): " + (it.abstracted.length ? "lines " + it.abstracted.join(", ") : "none") + "\n" +
       it.smt + "\n; ----- z3 -----\n" + it.out + "\n";
     if (it.vacuity) s += "; ----- loop-bound check -----\n" + it.vacuity + "\n; ----- z3 -----\n" + it.vacuityOut + "\n";
     if (it.run) s += "; model: " + inputText(it.model) + " (on the real code: " + a + " " + it.run[0] + ", " + b + " " + it.run[1] + ")\n";
@@ -573,7 +588,7 @@ function liteLog(r, a, b) {
     if (it.heuristics) s += "; refine heuristics: H1 [" + it.heuristics.h1.join(", ") + "], H2 [" + it.heuristics.h2.join(", ") + "], H3 scores " + JSON.stringify(it.heuristics.h3) + "\n";
     if (it.pick) s += "; refine: line " + it.pick + " made concrete\n";
     return s;
-  }).join("\n") + (lite.sel === null ? "\n; verdict: " + r.verdict + (r.reason ? " (" + r.reason + ")" : "") + "\n" : "");
+  }).join("\n") + (lite.sel === null ? "\n; verdict: " + r.verdict + (r.reason ? " (" + r.reason + ")" : "") + "\n" + totalTimes(r) : "");
 }
 // the original ARDiff's output for an unedited example, on the published site (raw.html, written by unified_report.py)
 function origRaw() {

@@ -21,7 +21,7 @@
 (function (root) {
 "use strict";
 var Engine = root.Engine;
-var UNROLL = 5, BOUND = 5, ITER_CAP = 10000, MAX_PATHS = 4000, MAX_SUMMARY = 400000, H1_TIMEOUT = 2000, MIN = -100, MAX = 100, MAX_TERM = 200, TIME_LIMIT = 90000;
+var UNROLL = 5, BOUND = 5, ITER_CAP = 10000, MAX_PATHS = 4000, MAX_SUMMARY = 400000, H1_TIMEOUT = 500, MIN = -100, MAX = 100, MAX_TERM = 200, TIME_LIMIT = 30000;
 
 function rangeText(mo, ranges) {
   var own = mo.params.filter(function (q) { return ranges[q.name]; });
@@ -29,6 +29,8 @@ function rangeText(mo, ranges) {
   return mo.params.filter(function (q) { return q.type !== "Z"; }).map(function (q) { var r = ranges[q.name] || [MIN, MAX]; return q.name + " " + r[0] + ".." + r[1]; }).join(", ");
 }
 function Unsupported(m) { this.message = m; }
+// milliseconds, as precisely as the platform gives them (ARDiff prints each stage's time per iteration)
+function now() { return typeof performance !== "undefined" && performance.now ? performance.now() : Date.now(); }
 
 // ---------------------------------------------------------------- which statements are common
 function lineMaps(oldSrc, newSrc) {
@@ -573,13 +575,13 @@ var PRELUDE = "(define-fun jdiv ((a Int) (b Int)) Int (ite (>= a 0) (ite (> b 0)
 // Each version's summary is, as in ARDiff, the disjunction over its paths of (path condition and the returned value):
 // Ret = the value, plus Exc = whether the path throws. ARDiff's query is summaryOld and not (summaryOld = summaryNew).
 function buildQuery(mo, mn, ao, an, ranges, bound) {
-  var sym = new Sym(), sums = [], apps = [], merged = [];
+  var sym = new Sym(), sums = [], apps = [], merged = [], tStart = now(), t0 = tStart, tSym = 0;
   sym.bound = bound;
   [[mo, ao], [mn, an]].forEach(function (p) {
     var env = {__done: ["Bool", "false"], __brk: ["Bool", "false"], __cont: ["Bool", "false"], __ret: ["Real", "ret_none"], __exc: ["Bool", "false"]}, sorts = {};
     p[0].params.forEach(function (q) { env[q.name] = [SORT[q.type], q.name]; sorts[q.name] = SORT[q.type]; });
     sym.methods = p[1]; sym.all = p[0].methods;
-    var defs0 = sym.defs.length, states;
+    var defs0 = sym.defs.length, states; t0 = now();
     var one = function (pc, xr, rv) { return "(and " + pc.join(" ") + " (= Exc " + xr + ")" + (xr === "true" ? "" : xr === "false" ? " (= Ret " + rv + ")" : " (or " + xr + " (= Ret " + rv + "))") + ")"; };
     try {
       states = sym.paths(p[1][p[0].key], Object.assign({}, env), Object.assign({}, sorts));
@@ -593,6 +595,7 @@ function buildQuery(mo, mn, ao, an, ranges, bound) {
       sym.run(p[1][p[0].key], env, sorts);
       states = [{pc: ["true"], env: env}];
     }
+    tSym += now() - t0;
     var ps = states.map(function (x) { return one(x.pc.length ? x.pc : ["true"], x.env.__exc[1], x.env.__ret[1]); });
     sums.push(ps.length ? (ps.length === 1 ? ps[0] : "(or " + ps.join(" ") + ")") : "false");
     apps.push(sym.defs.slice(defs0).map(function (d) { return d[2]; }).concat(ps));
@@ -618,7 +621,8 @@ function buildQuery(mo, mn, ao, an, ranges, bound) {
           // with a merged summary (or a loop in an inlined callee) the loop bound is an assumption on the inputs:
           // if no input meets it, an unsat query says nothing
           vacuity: sym.assume.length ? PRELUDE + decl + "(check-sat)\n" : null,
-          occ: occurrences(sym, apps), h1: function (f) { return h1Query(mo, sym, rng, same, f); }};
+          occ: occurrences(sym, apps), h1: function (f) { return h1Query(mo, sym, rng, same, f); },
+          times: {symex: tSym, smt: now() - tStart - tSym}};
 }
 
 // ---------------------------------------------------------------- ARDiff's refinement heuristics (GradDiff.getNextToRefine)
@@ -709,6 +713,7 @@ function value(x) {
 // ---------------------------------------------------------------- the loop
 // opts.ranges: {param: [lo, hi]} for the inputs to consider (default -100..100 for every number, as in ARDiff)
 async function analyze(oldSrc, newSrc, z3eval, onStep, opts) {
+  var tInit = now();
   var ranges = (opts && opts.ranges) || {}, bound = (opts && opts.bound) || BOUND;      // opts.bound: like ARDiff's --b
   var mo = Engine.parseMethod(oldSrc), mn = Engine.parseMethod(newSrc);
   var maps = lineMaps(oldSrc, newSrc), oldLines = oldSrc.split("\n");
@@ -717,8 +722,9 @@ async function analyze(oldSrc, newSrc, z3eval, onStep, opts) {
   var pairsOld = {}, pairsNew = {};
   Object.keys(mo.methods).forEach(function (k) { adjacentPairs(mo.methods[k].stmts, "old", maps, pairsOld); });
   Object.keys(mn.methods).forEach(function (k) { adjacentPairs(mn.methods[k].stmts, "new", maps, pairsNew); });
-  var started = Date.now();
+  var started = Date.now(), init = now() - tInit;
   for (var it = 0; it < 60; it++) {
+    var times = {init: it === 0 ? init : 0, abstract: 0, symex: 0, smt: 0, solve: 0, refine: 0}, tA = now();
     if (Date.now() - started > TIME_LIMIT) { verdict = "UNKNOWN"; reason = "time limit (" + TIME_LIMIT / 1000 + " s)"; break; }
     var seen = {}, blocks = {};
     var absAll = function (m, side) {
@@ -726,14 +732,18 @@ async function analyze(oldSrc, newSrc, z3eval, onStep, opts) {
       Object.keys(m.methods).forEach(function (k) { out[k] = abstract(m.methods[k].stmts, side, maps, concrete, seen, m.methods, sizeVars(m.methods[k].stmts), side === "old" ? pairsNew : pairsOld, k === m.key ? blocks : null); });
       return out;
     };
-    var q = buildQuery(mo, mn, absAll(mo, "old"), absAll(mn, "new"), ranges, bound), out;
+    var ao = absAll(mo, "old"), an = absAll(mn, "new");
+    times.abstract = now() - tA;
+    var q = buildQuery(mo, mn, ao, an, ranges, bound), out, tS;
+    times.symex = q.times.symex; times.smt = q.times.smt; tS = now();
     try { out = (await z3eval(q.smt)).trim(); } catch (e) { verdict = "UNKNOWN"; reason = "z3 failed: " + (e.message || e); break; }
+    times.solve += now() - tS;
     var status = out.split("\n")[0].trim();
-    var rec = {iter: it, merged: q.merged, abstracted: Object.keys(seen).map(Number).sort(function (a, b) { return a - b; }), status: status, bounded: q.bounded,
+    var rec = {iter: it, times: times, merged: q.merged, abstracted: Object.keys(seen).map(Number).sort(function (a, b) { return a - b; }), status: status, bounded: q.bounded,
                smt: q.smt, out: out};
     iters.push(rec);
     if (status === "unsat") {
-      if (q.vacuity) { rec.vacuity = q.vacuity; rec.vacuityOut = (await z3eval(q.vacuity)).trim(); }
+      if (q.vacuity) { tS = now(); rec.vacuity = q.vacuity; rec.vacuityOut = (await z3eval(q.vacuity)).trim(); times.solve += now() - tS; }
       if (q.noPaths) { verdict = "UNKNOWN"; reason = "every path takes more than " + bound + " branches on the inputs (ARDiff's bound)"; }
       else if (q.vacuity && rec.vacuityOut.split("\n")[0] !== "sat") { verdict = "UNKNOWN"; reason = "every input runs a loop more than " + UNROLL + " times"; }
       else { verdict = "EQUIVALENT"; reason = "for inputs in " + rangeText(mo, ranges) + (q.cut ? ", on the paths with up to " + bound + " branches on the inputs" : "") + (q.merged && q.merged.length && q.bounded ? ", loops up to " + UNROLL + " iterations" : ""); }
@@ -753,12 +763,13 @@ async function analyze(oldSrc, newSrc, z3eval, onStep, opts) {
       // the verdict is NOT EQUIVALENT only when no meaning of the abstracted statements lets the two versions agree.
       // The model is not run on the real code to decide; it is only reported as the counterexample.
       if (!q.ufs.length) { verdict = "NOT EQUIVALENT"; cex = {inputs: inputs, old: ro, new: rn}; rec.real = true; break; }
-      rec.agreeOut = (await z3eval(q.agree)).trim();
+      tS = now(); rec.agreeOut = (await z3eval(q.agree)).trim(); times.solve += now() - tS;
       if (rec.agreeOut.split("\n")[0] === "unsat") { verdict = "NOT EQUIVALENT"; cex = {inputs: inputs, old: ro, new: rn}; rec.real = true; break; }
       rec.real = false;
     }
     // refine: make one abstracted statement concrete again, chosen with ARDiff's heuristics H1, H2 and H3
-    var pick = await pickToRefine(q, rec, blocks, oldSrc, z3eval);
+    var tR = now(), pick = await pickToRefine(q, rec, blocks, oldSrc, z3eval);
+    times.refine = now() - tR;
     if (pick === null) {
       if (status === "sat") { verdict = "NOT EQUIVALENT"; cex = {inputs: inputs, old: rec.run[0], new: rec.run[1]}; rec.real = true; }
       else { verdict = "UNKNOWN"; reason = "z3: " + status; }
